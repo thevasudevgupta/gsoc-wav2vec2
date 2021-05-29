@@ -9,14 +9,14 @@ from dataclasses import asdict, dataclass
 @dataclass
 class Wav2Vec2Config:
     vocab_size: int = 32
-    dropout: int = .1
+    dropout: int = 0.1
     hidden_size: int = 768
     intermediate_size: int = 3072
     is_gelu_approx: bool = False
     layer_norm_eps: float = 1e-5
     conv_bias: bool = False
 
-    layer_drop: float = .1
+    layer_drop: float = 0.1
 
     filter_sizes: list = [512, 512, 512]
     kernal_sizes: list = [10, 5, 5]

@@ -26,26 +26,27 @@ class TransformerAttention(tf.keras.layer.Layer):
         self.projection = tf.keras.layers.Dense(config.hidden_size)
 
     def call(self, batch, padding_mask, training=False):
-        q_out = self._prepare_either_qkv(self.q(batch))
-        k_out = self._prepare_either_qkv(self.k(batch))
-        v_out = self._prepare_either_qkv(self.v(batch))
+        bz, seqlen, hidden_size = batch.shape
+        head_size = hidden_size // self.num_heads
+        q_out = self._prepare_either_qkv(self.q(batch), head_size)
+        k_out = self._prepare_either_qkv(self.k(batch), head_size)
+        v_out = self._prepare_either_qkv(self.v(batch), head_size)
 
         batch = self.attn_fn(
             [q_out, v_out, k_out],
             mask=[padding_mask, padding_mask],
             training=training,
         )
+        batch = tf.reshape(batch, (bz, self.num_heads, seqlen, head_size))
+        batch = tf.transpose(batch, perm=(bz, seqlen, self.num_heads, head_size))
         batch = self.projection(batch)
         return batch
 
-    def _prepare_either_qkv(self, tensor):
-        bz, seqlen, hidden_size = tensor.shape
-        head_size = hidden_size // self.num_heads
+    def _prepare_either_qkv(self, tensor, head_size):
+        bz, seqlen, _ = tensor.shape
         tensor = tf.reshape(tensor, (bz, seqlen, self.num_heads, head_size))
-        return tf.reshape(
-            tf.transpose(tensor, perm=(0, 2, 1, 3)),
-            (bz * self.num_heads, seqlen, head_size),
-        )
+        tensor = tf.reshape(tensor, (bz * self.num_heads, seqlen, head_size))
+        return tf.transpose(tensor, perm=(0, 2, 1, 3))
 
 
 class FeatureExtractorLayer(tf.keras.layers.Layer):
@@ -56,15 +57,23 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
         kernal_sizes = config.kernal_sizes
         strides = config.strides
 
+        self.layer_norm = None
         if layer_id == 0:
             self.conv_layer = tf.keras.layer.Conv1d(
-                filters[layer_id], kernal_sizes[layer_id], strides=strides[layer_id], use_bias=config.conv_bias
+                filters[layer_id],
+                kernal_sizes[layer_id],
+                strides=strides[layer_id],
+                use_bias=config.conv_bias,
             )
             # TODO: add group normalization
-            # self.layer_norm = 
+            # self.layer_norm =
         else:
-            self.conv_layer = tf.keras.layers.Conv1D(filters[layer_id], kernal_sizes[layer_id], strides=strides[layer_id], use_bias=config.conv_bias)
-            self.layer_norm = None
+            self.conv_layer = tf.keras.layers.Conv1D(
+                filters[layer_id],
+                kernal_sizes[layer_id],
+                strides=strides[layer_id],
+                use_bias=config.conv_bias,
+            )
 
     def call(self, batch):
         batch = self.conv_layer(batch)
@@ -98,7 +107,9 @@ class TransformerLayer(tf.keras.layers.Layer):
         self.layer_norm = tf.keras.layers.LayerNormalization(eps=config.layer_norm_eps)
         self.intermediate = tf.keras.layers.Dense(self.intermediate_size)
         self.output = tf.keras.layers.Dense(self.hidden_size)
-        self.final_layer_norm = tf.keras.layers.LayerNormalization(eps=config.layer_norm_eps)
+        self.final_layer_norm = tf.keras.layers.LayerNormalization(
+            eps=config.layer_norm_eps
+        )
 
     def call(self, batch, padding_mask, training=False):
         # self_attn
@@ -125,6 +136,7 @@ class PositionalConvEmbedding(tf.keras.layers.Layer):
     def call(self, batch):
         return batch
 
+
 class Wav2Vec2Encoder(tf.keras.layers.Layer):
     def __init__(self, config):
         super().__init__()
@@ -141,10 +153,10 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         batch = self.dropout(self.layer_norm(batch), training=training)
         for layer in self.layers:
             # TODO: check more on layer_drop (https://arxiv.org/abs/1909.11556)
-            drop_prob = np.random.uniform(0,1)
+            drop_prob = np.random.uniform(0, 1)
             if training and (drop_prob < self.layer_drop):
                 continue
-            # 
+            #
             batch = layer(batch, padding_mask, training=training)
 
         return batch

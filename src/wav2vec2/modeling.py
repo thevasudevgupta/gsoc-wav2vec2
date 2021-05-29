@@ -5,6 +5,7 @@
 
 import os
 
+import numpy as np
 import tensorflow as tf
 from huggingface_hub import ModelHubMixin
 
@@ -24,7 +25,7 @@ class TransformerAttention(tf.keras.layer.Layer):
         self.attn_fn = tf.keras.layers.Attention(dropout=config.dropout)
         self.projection = tf.keras.layers.Dense(config.hidden_size)
 
-    def call(self, batch, padding_mask):
+    def call(self, batch, padding_mask, training=False):
         q_out = self._prepare_either_qkv(self.q(batch))
         k_out = self._prepare_either_qkv(self.k(batch))
         v_out = self._prepare_either_qkv(self.v(batch))
@@ -32,7 +33,7 @@ class TransformerAttention(tf.keras.layer.Layer):
         batch = self.attn_fn(
             [q_out, v_out, k_out],
             mask=[padding_mask, padding_mask],
-            training=self.training,
+            training=training,
         )
         batch = self.projection(batch)
         return batch
@@ -55,30 +56,35 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
         kernal_sizes = config.kernal_sizes
         strides = config.strides
 
-        self.conv_layer = tf.keras.layer.Conv1d(
-            filters[layer_id], kernal_sizes[layer_id], strides=strides[layer_id]
-        )
-
-        self.layer_norm = tf.keras.layers.LayerNormalization()
+        if layer_id == 0:
+            self.conv_layer = tf.keras.layer.Conv1d(
+                filters[layer_id], kernal_sizes[layer_id], strides=strides[layer_id], use_bias=config.conv_bias
+            )
+            # TODO: add group normalization
+            # self.layer_norm = 
+        else:
+            self.conv_layer = tf.keras.layers.Conv1D(filters[layer_id], kernal_sizes[layer_id], strides=strides[layer_id], use_bias=config.conv_bias)
+            self.layer_norm = None
 
     def call(self, batch):
         batch = self.conv_layer(batch)
-        batch = self.layer_norm(batch)
+        if self.layer_norm is not None:
+            batch = self.layer_norm(batch)
         batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
         return batch
 
 
-class FeatureProjector(tf.keras.layers.Layer):
+class FeatureProjection(tf.keras.layers.Layer):
     def __init__(self, config):
         super().__init__()
-        self.layer_norm = tf.keras.layers.LayerNormalization()
+        self.layer_norm = tf.keras.layers.LayerNormalization(eps=config.layer_norm_eps)
         self.projection = tf.keras.layers.Dense(config.hidden_size)
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
-    def call(self, batch):
+    def call(self, batch, training=False):
         batch = self.layer_norm(batch)
         batch = self.projection(batch)
-        return self.dropout(batch)
+        return self.dropout(batch, training=training)
 
 
 class TransformerLayer(tf.keras.layers.Layer):
@@ -87,16 +93,61 @@ class TransformerLayer(tf.keras.layers.Layer):
         self.is_gelu_approx = config.is_gelu_approx
 
         self.attention = TransformerAttention(config)
-        self.intermediate = tf.keras.layers.Dense(self.intermediate_size)
-        self.output = tf.keras.layers.Dense(self.hidden_size)
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
-    def call(self, batch, padding_mask):
-        batch = self.attention(batch, padding_mask)
+        self.layer_norm = tf.keras.layers.LayerNormalization(eps=config.layer_norm_eps)
+        self.intermediate = tf.keras.layers.Dense(self.intermediate_size)
+        self.output = tf.keras.layers.Dense(self.hidden_size)
+        self.final_layer_norm = tf.keras.layers.LayerNormalization(eps=config.layer_norm_eps)
+
+    def call(self, batch, padding_mask, training=False):
+        # self_attn
+        residual = batch
+        batch = self.attention(batch, padding_mask, training=training)
+        batch = self.dropout(batch, training=training)
+        batch = self.layer_norm(batch + residual)
+
+        # ffn
+        residual = batch
         batch = tf.nn.gelu(self.intermediate(batch), approximate=self.is_gelu_approx)
-        batch = self.dropout(self.output(batch))
+        batch = self.dropout(batch, training=training)
+        batch = self.dropout(self.output(batch), training=training)
+        batch = self.final_layer_norm(batch + residual)
+
         return batch
 
+
+class PositionalConvEmbedding(tf.keras.layers.Layer):
+    def __init__(self, config):
+        # TODO
+        pass
+
+    def call(self, batch):
+        return batch
+
+class Wav2Vec2Encoder(tf.keras.layers.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.layer_drop = config.layer_drop
+
+        self.pos_conv_embed = PositionalConvEmbedding(config)
+        self.layer_norm = tf.keras.layers.LayerNormalization(eps=config.layer_norm_eps)
+        self.dropout = tf.keras.layers.Dropout(config.dropout)
+        self.layers = [TransformerLayer(config) for _ in range(config.num_layers)]
+
+    def call(self, batch, padding_mask, training=False):
+        pos_embed = self.pos_conv_embed(batch)
+        batch += pos_embed
+        batch = self.dropout(self.layer_norm(batch), training=training)
+        for layer in self.layers:
+            # TODO: check more on layer_drop (https://arxiv.org/abs/1909.11556)
+            drop_prob = np.random.uniform(0,1)
+            if training and (drop_prob < self.layer_drop):
+                continue
+            # 
+            batch = layer(batch, padding_mask, training=training)
+
+        return batch
 
 
 class TFKerasModel(tf.keras.Model):
@@ -112,12 +163,11 @@ class TFKerasModel(tf.keras.Model):
         raise NotImplementedError
 
 
-class Wav2Vec2(TFKerasModel):
+class Wav2Vec2Model(TFKerasModel):
     def __init__(self, config: Wav2Vec2Config):
         super().__init__()
-        assert isinstance(
-            config, Wav2Vec2Config
-        ), "`config` must be an instace of `Wave2Vec2Config`"
+        if not isinstance(config, Wav2Vec2Config):
+            raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
 
         num_feature_extractor_layers = len(config.filter_sizes)
 
@@ -125,15 +175,16 @@ class Wav2Vec2(TFKerasModel):
             FeatureExtractorLayer(config, layer_id=i)
             for i in range(num_feature_extractor_layers)
         ]
-        self.feature_projector = FeatureProjector(config)
-        self.transformer = [
-            TransformerLayer(config) for _ in range(len(config.num_layers))
-        ]
+        self.feature_projection = FeatureProjection(config)
+        self.encoder = Wav2Vec2Encoder(config)
 
-    def call(self, batch, padding_mask):
-        batch = self.feature_extractor(batch)
-        batch = self.feature_projector(batch)
-        batch = self.transformer(batch, padding_mask)
+    def call(self, batch, padding_mask, training=False):
+        for feature_extractor_layer in self.feature_extractor:
+            batch = feature_extractor_layer(batch)
+        # TODO: checkout transpose behavious here
+        batch = self.feature_projection(batch, training=training)
+        # TODO: apply spec-augment to batch
+        batch = self.encoder(batch, padding_mask=padding_mask, training=training)
         return batch
 
 
@@ -142,15 +193,19 @@ class Wav2Vec2ForCTC(TFKerasModel):
 
     def __init__(self, config: Wav2Vec2Config):
         super().__init__()
-        assert isinstance(
-            config, Wav2Vec2Config
-        ), "`config` must be an instace of `Wave2Vec2Config`"
+        if not isinstance(config, Wav2Vec2Config):
+            raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
         self.config = config
 
-        self.model = Wav2Vec2(config)
+        self.model = Wav2Vec2Model(config)
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size)
 
-    def call(self, batch):
-        batch = self.dropout(self.model(batch))
-        return self.lm_head(batch)
+    def call(self, batch, padding_mask, training=False):
+        batch = self.model(batch, padding_mask=padding_mask, training=training)
+        batch = self.dropout(batch, training=training)
+        batch = self.lm_head(batch)
+
+        # TODO: implement loss
+        loss = None
+        return {"loss": loss, "logits": batch}

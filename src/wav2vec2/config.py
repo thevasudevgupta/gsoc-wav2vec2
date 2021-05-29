@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 
 
 @dataclass
-class Wave2Vec2Config:
+class Wav2Vec2Config:
     vocab_size: int = 32
     dropout: int = 0.1
     hidden_size: int = 768
@@ -33,6 +33,6 @@ class Wave2Vec2Config:
 if __name__ == "__main__":
     """Testing area"""
 
-    config = Wave2Vec2Config()
+    config = Wav2Vec2Config()
     print(config)
     config.save_pretrained("dummy")

@@ -1,14 +1,14 @@
 # __author__ = "Vasudev Gupta"
 # __author_email__ = "7vasudevgupta@gmail.com"
 
-"""TensorFlow implementation of Wave2Vec2"""
+"""TensorFlow implementation of Wav2Vec2"""
 
 import os
 
 import tensorflow as tf
 from huggingface_hub import ModelHubMixin
 
-from .config import Wave2Vec2Config
+from .config import Wav2Vec2Config
 
 
 class TransformerAttention(tf.keras.layer.Layer):
@@ -98,6 +98,7 @@ class TransformerLayer(tf.keras.layers.Layer):
         return batch
 
 
+
 class TFKerasModel(tf.keras.Model):
     def save_pretrained(self, save_dir):
         self.config.save_pretrained(save_dir)
@@ -111,11 +112,11 @@ class TFKerasModel(tf.keras.Model):
         raise NotImplementedError
 
 
-class Wave2Vec2(TFKerasModel):
-    def __init__(self, config: Wave2Vec2Config):
+class Wav2Vec2(TFKerasModel):
+    def __init__(self, config: Wav2Vec2Config):
         super().__init__()
         assert isinstance(
-            config, Wave2Vec2Config
+            config, Wav2Vec2Config
         ), "`config` must be an instace of `Wave2Vec2Config`"
 
         num_feature_extractor_layers = len(config.filter_sizes)
@@ -136,17 +137,17 @@ class Wave2Vec2(TFKerasModel):
         return batch
 
 
-class Wave2Vec2ForCTC(TFKerasModel):
+class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with CTC/LM head"""
 
-    def __init__(self, config: Wave2Vec2Config):
+    def __init__(self, config: Wav2Vec2Config):
         super().__init__()
         assert isinstance(
-            config, Wave2Vec2Config
+            config, Wav2Vec2Config
         ), "`config` must be an instace of `Wave2Vec2Config`"
         self.config = config
 
-        self.model = Wave2Vec2(config)
+        self.model = Wav2Vec2(config)
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size)
 

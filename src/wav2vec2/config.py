@@ -20,11 +20,12 @@ class Wav2Vec2Config:
     layer_drop: float = 0.1
 
     num_conv_pos_embeddings: int = 128
-    num_conv_pos_embedding_groups: int =16
+    num_conv_pos_embedding_groups: int = 16
 
+    # feature extractor
     filter_sizes: list = field(default_factory=lambda: [512, 512, 512])
     kernal_sizes: list = field(default_factory=lambda: [10, 5, 5])
-    strides: list = field(default_factory=lambda: [5, 5, 5])
+    strides: list = field(default_factory=lambda: [5, 2, 2])
 
     def __post_init__(self):
         if not (len(self.filter_sizes) == len(self.kernal_sizes) == len(self.strides)):

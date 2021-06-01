@@ -6,11 +6,12 @@
 import os
 import subprocess
 
+from dataclasses import replace
+
 import numpy as np
 import tensorflow as tf
 from huggingface_hub import ModelHubMixin
 
-# TODO: remove this dependacy at the very end
 import tensorflow_addons as tfa
 
 from .config import Wav2Vec2Config
@@ -30,27 +31,32 @@ class TransformerAttention(tf.keras.layers.Layer):
         self.projection = tf.keras.layers.Dense(config.hidden_size)
 
     def call(self, batch, padding_mask, training=False):
-        bz, seqlen, hidden_size = batch.shape
+        bsz, seqlen, hidden_size = batch.shape
         head_size = hidden_size // self.num_heads
         q_out = self._prepare_either_qkv(self.q(batch), head_size)
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
         v_out = self._prepare_either_qkv(self.v(batch), head_size)
+
+        if padding_mask is None:
+            shape = q_out.shape[:-1]
+            padding_mask = tf.ones(shape, dtype=tf.bool)
 
         batch = self.attn_fn(
             [q_out, v_out, k_out],
             mask=[padding_mask, padding_mask],
             training=training,
         )
-        batch = tf.reshape(batch, (bz, self.num_heads, seqlen, head_size))
-        batch = tf.transpose(batch, perm=(bz, seqlen, self.num_heads, head_size))
+        batch = tf.reshape(batch, (bsz, self.num_heads, seqlen, head_size))
+        batch = tf.transpose(batch, perm=(0, 2, 1, 3))
+        batch = tf.reshape(batch, (bsz, seqlen, hidden_size))
         batch = self.projection(batch)
         return batch
 
     def _prepare_either_qkv(self, tensor, head_size):
-        bz, seqlen, _ = tensor.shape
-        tensor = tf.reshape(tensor, (bz, seqlen, self.num_heads, head_size))
-        tensor = tf.reshape(tensor, (bz * self.num_heads, seqlen, head_size))
-        return tf.transpose(tensor, perm=(0, 2, 1, 3))
+        bsz, seqlen, _ = tensor.shape
+        tensor = tf.reshape(tensor, (bsz, seqlen, self.num_heads, head_size))
+        tensor = tf.transpose(tensor, perm=(0, 2, 1, 3))
+        return tf.reshape(tensor, (bsz * self.num_heads, seqlen, head_size))
 
 
 class FeatureExtractorLayer(tf.keras.layers.Layer):
@@ -69,7 +75,6 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
                 strides=stride,
                 use_bias=config.conv_bias,
             )
-            # TODO: correct axis during inference
             self.layer_norm = tfa.layers.GroupNormalization(conv_dim, axis=1)
         else:
             self.conv_layer = tf.keras.layers.Conv1D(
@@ -82,7 +87,9 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
     def call(self, batch):
         batch = self.conv_layer(batch)
         if self.layer_norm is not None:
+            batch = tf.transpose(batch, perm=(0, 2, 1))
             batch = self.layer_norm(batch)
+            batch = tf.transpose(batch, perm=(0, 2, 1))
         batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
         return batch
 
@@ -116,6 +123,7 @@ class TransformerLayer(tf.keras.layers.Layer):
         )
 
     def call(self, batch, padding_mask, training=False):
+
         # self_attn
         residual = batch
         batch = self.attention(batch, padding_mask, training=training)
@@ -173,9 +181,6 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
 
 
 class TFKerasModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # self.init()
 
     def save_pretrained(self, save_dir):
         self.config.save_pretrained(save_dir)
@@ -185,29 +190,35 @@ class TFKerasModel(tf.keras.Model):
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
     @classmethod
-    def from_pretrained(cls, model_id, *args, **kwargs):
+    def from_pretrained(cls, model_id, **config_kwargs):
         """Model has to be in public repo"""
 
         save_dir = model_id.split("/")[-1]
-        os.makedirs(save_dir, exist_ok=True)
-        config_url = f"wget https://huggingface.co/{model_id}/resolve/main/config.json -P {save_dir}"
-        model_url = f"wget https://huggingface.co/{model_id}/resolve/main/tf_model.h5 -P {save_dir}"
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+            config_url = f"wget https://huggingface.co/{model_id}/resolve/main/config.json -P {save_dir}"
+            model_url = f"wget https://huggingface.co/{model_id}/resolve/main/tf_model.h5 -P {save_dir}"
 
-        try:
-            for url in [config_url, model_url]:
-                subprocess.run(url.split(), check=True, stderr=subprocess.PIPE)
-        except:
-            raise ValueError(f"Couldn't download model weights from {model_url}")
+            try:
+                for url in [config_url, model_url]:
+                    subprocess.run(url.split(), check=True, stderr=subprocess.PIPE)
+            except:
+                raise ValueError(f"Couldn't download model weights from {model_url}")
+        else:
+            print(f"Loading weights locally from `{save_dir}`")
 
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
-        model = cls(config, *args, **kwargs)
+        config = replace(config, **config_kwargs)
+        model = cls(config)
         model.load_weights(os.path.join(save_dir, "tf_model.h5"))
+        print("Total number of loaded variables:", len(model.variables))
         return model
 
-    def init(self, input_shape=(1, 128, 1)):
+    def _init(self, input_shape=(1, 128)):
         """Build Model weights using dummy inputs"""
-        dummy_input = tf.ones(input_shape, dtype=tf.int32)
-        return self(dummy_input, dummy_input)
+        # call this at the end only
+        dummy_input = tf.ones(input_shape, dtype=tf.float32)
+        return self(dummy_input)
 
 
 class Wav2Vec2Model(TFKerasModel):
@@ -225,12 +236,15 @@ class Wav2Vec2Model(TFKerasModel):
         self.feature_projection = FeatureProjection(config)
         self.encoder = Wav2Vec2Encoder(config)
 
-    def call(self, batch, padding_mask, training=False):
+    def call(self, batch, padding_mask=None, training=False):
+
+        batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
             batch = feature_extractor_layer(batch)
-        # TODO: checkout transpose behavious here
+
         batch = self.feature_projection(batch, training=training)
         # TODO: apply spec-augment to batch later (useful for training only)
+
         batch = self.encoder(batch, padding_mask=padding_mask, training=training)
         return batch
 
@@ -248,7 +262,10 @@ class Wav2Vec2ForCTC(TFKerasModel):
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size)
 
-    def call(self, batch, padding_mask, training=False):
+        self._init()
+
+    def call(self, batch, padding_mask=None, training=False):
+        # batch - (bsz, seqlen)
         batch = self.model(batch, padding_mask=padding_mask, training=training)
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)

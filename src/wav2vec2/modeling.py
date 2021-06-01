@@ -5,14 +5,12 @@
 
 import os
 import subprocess
-
 from dataclasses import replace
 
 import numpy as np
 import tensorflow as tf
-from huggingface_hub import ModelHubMixin
-
 import tensorflow_addons as tfa
+from huggingface_hub import ModelHubMixin
 
 from .config import Wav2Vec2Config
 
@@ -76,7 +74,9 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
                 use_bias=config.conv_bias,
                 name="conv",
             )
-            self.layer_norm = tfa.layers.GroupNormalization(conv_dim, axis=1, name="layer_norm")
+            self.layer_norm = tfa.layers.GroupNormalization(
+                conv_dim, axis=1, name="layer_norm"
+            )
         else:
             self.conv_layer = tf.keras.layers.Conv1D(
                 conv_dim,
@@ -99,7 +99,9 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
 class FeatureProjection(tf.keras.layers.Layer):
     def __init__(self, config, name="feature_projection"):
         super().__init__(name=name)
-        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, name="layer_norm")
+        self.layer_norm = tf.keras.layers.LayerNormalization(
+            epsilon=config.layer_norm_eps, name="layer_norm"
+        )
         self.projection = tf.keras.layers.Dense(config.hidden_size, name="projection")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
@@ -117,11 +119,18 @@ class TransformerLayer(tf.keras.layers.Layer):
         self.attention = TransformerAttention(config, name="attention")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
-        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, name="layer_norm")
-        self.intermediate = tf.keras.layers.Dense(config.intermediate_size, name="feed_forward/intermediate_dense")
-        self.attn_output = tf.keras.layers.Dense(config.hidden_size, name="feed_forward/output_dense")
+        self.layer_norm = tf.keras.layers.LayerNormalization(
+            epsilon=config.layer_norm_eps, name="layer_norm"
+        )
+        self.intermediate = tf.keras.layers.Dense(
+            config.intermediate_size, name="feed_forward/intermediate_dense"
+        )
+        self.attn_output = tf.keras.layers.Dense(
+            config.hidden_size, name="feed_forward/output_dense"
+        )
         self.final_layer_norm = tf.keras.layers.LayerNormalization(
-            epsilon=config.layer_norm_eps, name="final_layer_norm",
+            epsilon=config.layer_norm_eps,
+            name="final_layer_norm",
         )
 
     def call(self, batch, padding_mask, training=False):
@@ -146,7 +155,12 @@ class PositionalConvEmbedding(tf.keras.layers.Layer):
     def __init__(self, config):
         self.is_gelu_apporx = config.is_gelu_approx
         # TODO: checkout padding in conv
-        self.conv = tf.keras.layers.Conv1D(config.hidden_size, config.num_conv_pos_embeddings, strides=config.num_conv_pos_embeddings, groups=config.num_conv_pos_embedding_groups)
+        self.conv = tf.keras.layers.Conv1D(
+            config.hidden_size,
+            config.num_conv_pos_embeddings,
+            strides=config.num_conv_pos_embeddings,
+            groups=config.num_conv_pos_embedding_groups,
+        )
         # TODO: checkout weight norm
         # self.weight_norm =
         self.num_pad_remove = 1 if config.num_conv_pos_embeddings % 2 == 0 else 0
@@ -165,9 +179,14 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         self.layer_drop = config.layer_drop
 
         # self.pos_conv_embed = PositionalConvEmbedding(config)
-        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, name="layer_norm")
+        self.layer_norm = tf.keras.layers.LayerNormalization(
+            epsilon=config.layer_norm_eps, name="layer_norm"
+        )
         self.dropout = tf.keras.layers.Dropout(config.dropout)
-        self.layers = [TransformerLayer(config, name=f"layers/{i}") for i in range(config.num_layers)]
+        self.layers = [
+            TransformerLayer(config, name=f"layers/{i}")
+            for i in range(config.num_layers)
+        ]
 
     def call(self, batch, padding_mask, training=False):
         # pos_embed = self.pos_conv_embed(batch)
@@ -183,7 +202,6 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
 
 
 class TFKerasModel(tf.keras.Model):
-
     def save_pretrained(self, save_dir):
         self.config.save_pretrained(save_dir)
         self.save_weights(os.path.join(save_dir, "tf_model.h5"))
@@ -232,7 +250,9 @@ class Wav2Vec2Model(TFKerasModel):
         num_feature_extractor_layers = len(config.filter_sizes)
 
         self.feature_extractor = [
-            FeatureExtractorLayer(config, layer_id=i, name=f"feature_extractor/conv_layers/{i}")
+            FeatureExtractorLayer(
+                config, layer_id=i, name=f"feature_extractor/conv_layers/{i}"
+            )
             for i in range(num_feature_extractor_layers)
         ]
         self.feature_projection = FeatureProjection(config, name="feature_projection")

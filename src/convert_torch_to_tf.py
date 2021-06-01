@@ -1,12 +1,12 @@
 # __author__ = "Vasudev Gupta"
 # __author_email__ = "7vasudevgupta@gmail.com"
 
-from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC
-import transformers
-import tensorflow as tf
 import numpy as np
-
+import tensorflow as tf
+import transformers
 from tqdm.auto import tqdm
+
+from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC
 
 PREFIX = "wav2vec-ctc/"
 SUFFIX = ":0"
@@ -22,7 +22,7 @@ KEYS_TO_IGNORE = [
     "wav2vec2.masked_spec_embed",
     "wav2vec2.encoder.pos_conv_embed.conv.bias",
     "wav2vec2.encoder.pos_conv_embed.conv.weight_g",
-    "wav2vec2.encoder.pos_conv_embed.conv.weight_v"
+    "wav2vec2.encoder.pos_conv_embed.conv.weight_v",
 ]
 
 
@@ -34,6 +34,7 @@ def replace(k):
 
 def get_tf_pretrained_model(config, hf_model_id: str):
     from tensorflow.python.keras import backend as K
+
     tf_model = Wav2Vec2ForCTC(config)
     hf_model = transformers.Wav2Vec2ForCTC.from_pretrained(hf_model_id)
 
@@ -64,14 +65,14 @@ def get_tf_pretrained_model(config, hf_model_id: str):
 
     print("EXTRA KEYS:", extra_keys)
 
-    K.batch_set_value(tf_weights)    
+    K.batch_set_value(tf_weights)
     # let's check if forward working properly
     tf_model(tf.ones((1, 1024), dtype=tf.float32))
 
     return tf_model
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     config = Wav2Vec2Config()
     tf_model = get_tf_pretrained_model(config, "facebook/wav2vec2-base-960h")
     tf_model.save_weights("dummy.h5")

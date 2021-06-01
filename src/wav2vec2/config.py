@@ -23,7 +23,9 @@ class Wav2Vec2Config:
     num_conv_pos_embedding_groups: int = 16
 
     # feature extractor
-    filter_sizes: list = field(default_factory=lambda: [512, 512, 512, 512, 512, 512, 512])
+    filter_sizes: list = field(
+        default_factory=lambda: [512, 512, 512, 512, 512, 512, 512]
+    )
     kernal_sizes: list = field(default_factory=lambda: [10, 3, 3, 3, 3, 2, 2])
     strides: list = field(default_factory=lambda: [5, 2, 2, 2, 2, 2, 2])
     conv_bias: bool = False

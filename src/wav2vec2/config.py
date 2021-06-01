@@ -16,16 +16,17 @@ class Wav2Vec2Config:
     intermediate_size: int = 3072
     is_gelu_approx: bool = False
     layer_norm_eps: float = 1e-5
-    conv_bias: bool = False
     layer_drop: float = 0.1
 
+    # positional embedding
     num_conv_pos_embeddings: int = 128
     num_conv_pos_embedding_groups: int = 16
 
     # feature extractor
-    filter_sizes: list = field(default_factory=lambda: [512, 512, 512])
-    kernal_sizes: list = field(default_factory=lambda: [10, 5, 5])
-    strides: list = field(default_factory=lambda: [5, 2, 2])
+    filter_sizes: list = field(default_factory=lambda: [512, 512, 512, 512, 512, 512, 512])
+    kernal_sizes: list = field(default_factory=lambda: [10, 3, 3, 3, 3, 2, 2])
+    strides: list = field(default_factory=lambda: [5, 2, 2, 2, 2, 2, 2])
+    conv_bias: bool = False
 
     def __post_init__(self):
         if not (len(self.filter_sizes) == len(self.kernal_sizes) == len(self.strides)):

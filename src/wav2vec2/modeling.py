@@ -20,15 +20,15 @@ from .config import Wav2Vec2Config
 class TransformerAttention(tf.keras.layers.Layer):
     """Attention layer from `Attention Is All You Need`"""
 
-    def __init__(self, config):
-        super().__init__()
+    def __init__(self, config, name="attention"):
+        super().__init__(name=name)
         self.num_heads = config.num_heads
 
-        self.q = tf.keras.layers.Dense(config.hidden_size)
-        self.k = tf.keras.layers.Dense(config.hidden_size)
-        self.v = tf.keras.layers.Dense(config.hidden_size)
+        self.q = tf.keras.layers.Dense(config.hidden_size, name="q_proj")
+        self.k = tf.keras.layers.Dense(config.hidden_size, name="k_proj")
+        self.v = tf.keras.layers.Dense(config.hidden_size, name="v_proj")
         self.attn_fn = tf.keras.layers.Attention(dropout=config.dropout)
-        self.projection = tf.keras.layers.Dense(config.hidden_size)
+        self.projection = tf.keras.layers.Dense(config.hidden_size, name="out_proj")
 
     def call(self, batch, padding_mask, training=False):
         bsz, seqlen, hidden_size = batch.shape
@@ -60,8 +60,8 @@ class TransformerAttention(tf.keras.layers.Layer):
 
 
 class FeatureExtractorLayer(tf.keras.layers.Layer):
-    def __init__(self, config, layer_id=0):
-        super().__init__()
+    def __init__(self, config, layer_id=0, name=None):
+        super().__init__(name=name)
         self.is_gelu_approx = config.is_gelu_approx
         conv_dim = config.filter_sizes[layer_id]
         kernal_size = config.kernal_sizes[layer_id]
@@ -74,14 +74,16 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
                 kernal_size,
                 strides=stride,
                 use_bias=config.conv_bias,
+                name="conv",
             )
-            self.layer_norm = tfa.layers.GroupNormalization(conv_dim, axis=1)
+            self.layer_norm = tfa.layers.GroupNormalization(conv_dim, axis=1, name="layer_norm")
         else:
             self.conv_layer = tf.keras.layers.Conv1D(
                 conv_dim,
                 kernal_size,
                 strides=stride,
                 use_bias=config.conv_bias,
+                name="conv",
             )
 
     def call(self, batch):
@@ -95,10 +97,10 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
 
 
 class FeatureProjection(tf.keras.layers.Layer):
-    def __init__(self, config):
-        super().__init__()
-        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps)
-        self.projection = tf.keras.layers.Dense(config.hidden_size)
+    def __init__(self, config, name="feature_projection"):
+        super().__init__(name=name)
+        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, name="layer_norm")
+        self.projection = tf.keras.layers.Dense(config.hidden_size, name="projection")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
     def call(self, batch, training=False):
@@ -108,18 +110,18 @@ class FeatureProjection(tf.keras.layers.Layer):
 
 
 class TransformerLayer(tf.keras.layers.Layer):
-    def __init__(self, config):
-        super().__init__()
+    def __init__(self, config, name=None):
+        super().__init__(name=name)
         self.is_gelu_approx = config.is_gelu_approx
 
-        self.attention = TransformerAttention(config)
+        self.attention = TransformerAttention(config, name="attention")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
-        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps)
-        self.intermediate = tf.keras.layers.Dense(config.intermediate_size)
-        self.attn_output = tf.keras.layers.Dense(config.hidden_size)
+        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, name="layer_norm")
+        self.intermediate = tf.keras.layers.Dense(config.intermediate_size, name="feed_forward/intermediate_dense")
+        self.attn_output = tf.keras.layers.Dense(config.hidden_size, name="feed_forward/output_dense")
         self.final_layer_norm = tf.keras.layers.LayerNormalization(
-            epsilon=config.layer_norm_eps
+            epsilon=config.layer_norm_eps, name="final_layer_norm",
         )
 
     def call(self, batch, padding_mask, training=False):
@@ -158,14 +160,14 @@ class PositionalConvEmbedding(tf.keras.layers.Layer):
 
 
 class Wav2Vec2Encoder(tf.keras.layers.Layer):
-    def __init__(self, config):
-        super().__init__()
+    def __init__(self, config, name="encoder"):
+        super().__init__(name=name)
         self.layer_drop = config.layer_drop
 
         # self.pos_conv_embed = PositionalConvEmbedding(config)
-        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps)
+        self.layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, name="layer_norm")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
-        self.layers = [TransformerLayer(config) for _ in range(config.num_layers)]
+        self.layers = [TransformerLayer(config, name=f"layers/{i}") for i in range(config.num_layers)]
 
     def call(self, batch, padding_mask, training=False):
         # pos_embed = self.pos_conv_embed(batch)
@@ -222,19 +224,19 @@ class TFKerasModel(tf.keras.Model):
 
 
 class Wav2Vec2Model(TFKerasModel):
-    def __init__(self, config: Wav2Vec2Config):
-        super().__init__()
+    def __init__(self, config: Wav2Vec2Config, name="wav2vec2"):
+        super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
 
         num_feature_extractor_layers = len(config.filter_sizes)
 
         self.feature_extractor = [
-            FeatureExtractorLayer(config, layer_id=i)
+            FeatureExtractorLayer(config, layer_id=i, name=f"feature_extractor/conv_layers/{i}")
             for i in range(num_feature_extractor_layers)
         ]
-        self.feature_projection = FeatureProjection(config)
-        self.encoder = Wav2Vec2Encoder(config)
+        self.feature_projection = FeatureProjection(config, name="feature_projection")
+        self.encoder = Wav2Vec2Encoder(config, name="encoder")
 
     def call(self, batch, padding_mask=None, training=False):
 
@@ -252,17 +254,17 @@ class Wav2Vec2Model(TFKerasModel):
 class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with CTC/LM head"""
 
-    def __init__(self, config: Wav2Vec2Config):
-        super().__init__()
+    def __init__(self, config: Wav2Vec2Config, name="wav2vec-ctc"):
+        super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
         self.config = config
 
-        self.model = Wav2Vec2Model(config)
+        self.model = Wav2Vec2Model(config, name="wav2vec2")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
-        self.lm_head = tf.keras.layers.Dense(config.vocab_size)
+        self.lm_head = tf.keras.layers.Dense(config.vocab_size, name="lm_head")
 
-        self._init()
+        self._init(input_shape=(1, 1024))
 
     def call(self, batch, padding_mask=None, training=False):
         # batch - (bsz, seqlen)

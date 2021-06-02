@@ -75,4 +75,5 @@ def get_tf_pretrained_model(config, hf_model_id: str):
 if __name__ == "__main__":
     config = Wav2Vec2Config()
     tf_model = get_tf_pretrained_model(config, "facebook/wav2vec2-base-960h")
-    tf_model.save_weights("dummy.h5")
+    tf_model.save_pretrained("wav2vec2-base-960h")
+

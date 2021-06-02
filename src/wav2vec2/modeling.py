@@ -25,8 +25,9 @@ class TransformerAttention(tf.keras.layers.Layer):
         self.q = tf.keras.layers.Dense(config.hidden_size, name="q_proj")
         self.k = tf.keras.layers.Dense(config.hidden_size, name="k_proj")
         self.v = tf.keras.layers.Dense(config.hidden_size, name="v_proj")
-        self.attn_fn = tf.keras.layers.Attention(dropout=config.dropout)
         self.projection = tf.keras.layers.Dense(config.hidden_size, name="out_proj")
+
+        self.dropout = tf.keras.layers.Dropout(config.dropout)
 
     def call(self, batch, padding_mask, training=False):
         bsz, seqlen, hidden_size = batch.shape
@@ -35,26 +36,40 @@ class TransformerAttention(tf.keras.layers.Layer):
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
         v_out = self._prepare_either_qkv(self.v(batch), head_size)
 
+        q_out = q_out * head_size**(-0.5)
+
+        # TODO: fix padding
         if padding_mask is None:
-            shape = q_out.shape[:-1]
+            shape = batch.shape[:-1]
             padding_mask = tf.ones(shape, dtype=tf.bool)
 
-        batch = self.attn_fn(
-            [q_out, v_out, k_out],
-            mask=[padding_mask, padding_mask],
-            training=training,
-        )
-        batch = tf.reshape(batch, (bsz, self.num_heads, seqlen, head_size))
-        batch = tf.transpose(batch, perm=(0, 2, 1, 3))
-        batch = tf.reshape(batch, (bsz, seqlen, hidden_size))
+        batch = self.get_context(q_out, k_out, v_out, padding_mask=padding_mask, training=training)
         batch = self.projection(batch)
         return batch
+
+    def get_context(self, q_out, k_out, v_out, padding_mask=None, training=False):
+
+        def prepare_mask(padding_mask):
+            mask_shape = padding_mask.shape + (padding_mask.shape[1], )
+            attn_penalty = tf.constant(-10000, dtype=tf.float32)
+            padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
+            return tf.cast(padding_mask, tf.float32) * attn_penalty
+
+        b, h, l, d = q_out.shape
+        attn_scores = tf.matmul(q_out, k_out, transpose_b=True) # "bhqd,bhkd->bhqk"
+
+        if padding_mask is not None:
+            attn_scores += prepare_mask(padding_mask)
+
+        attn_scores = self.dropout(tf.nn.softmax(attn_scores, axis=-1), training=training)
+        context = tf.matmul(attn_scores, v_out) # "bhll,bhld->bhld"
+        context = tf.transpose(context, perm=(0, 2, 1, 3))
+        return tf.reshape(context, (b, l, h*d))
 
     def _prepare_either_qkv(self, tensor, head_size):
         bsz, seqlen, _ = tensor.shape
         tensor = tf.reshape(tensor, (bsz, seqlen, self.num_heads, head_size))
-        tensor = tf.transpose(tensor, perm=(0, 2, 1, 3))
-        return tf.reshape(tensor, (bsz * self.num_heads, seqlen, head_size))
+        return tf.transpose(tensor, perm=(0, 2, 1, 3)) # -> bsz, num_heads, seqlen, head_size
 
 
 class FeatureExtractorLayer(tf.keras.layers.Layer):
@@ -65,26 +80,20 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
         kernal_size = config.kernal_sizes[layer_id]
         stride = config.strides[layer_id]
 
-        self.layer_norm = None
+        self.conv_layer = tf.keras.layers.Conv1D(
+            conv_dim,
+            kernal_size,
+            strides=stride,
+            use_bias=config.conv_bias,
+            name="conv",
+        )
+
         if layer_id == 0:
-            self.conv_layer = tf.keras.layers.Conv1D(
-                conv_dim,
-                kernal_size,
-                strides=stride,
-                use_bias=config.conv_bias,
-                name="conv",
-            )
             self.layer_norm = tfa.layers.GroupNormalization(
                 conv_dim, axis=1, name="layer_norm"
             )
         else:
-            self.conv_layer = tf.keras.layers.Conv1D(
-                conv_dim,
-                kernal_size,
-                strides=stride,
-                use_bias=config.conv_bias,
-                name="conv",
-            )
+            self.layer_norm = None
 
     def call(self, batch):
         batch = self.conv_layer(batch)
@@ -263,8 +272,8 @@ class Wav2Vec2Model(TFKerasModel):
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
             batch = feature_extractor_layer(batch)
-
         batch = self.feature_projection(batch, training=training)
+
         # TODO: apply spec-augment to batch later (useful for training only)
 
         batch = self.encoder(batch, padding_mask=padding_mask, training=training)

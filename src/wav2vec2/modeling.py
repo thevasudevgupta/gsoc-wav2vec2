@@ -9,10 +9,10 @@ from dataclasses import replace
 
 import numpy as np
 import tensorflow as tf
-from .tensorflow_addons import WeightNormalization, GroupNormalization
 from huggingface_hub import ModelHubMixin
 
 from .config import Wav2Vec2Config
+from .tensorflow_addons import Conv1DWithWeightNorm, GroupNormalization
 
 
 class TransformerAttention(tf.keras.layers.Layer):
@@ -36,40 +36,45 @@ class TransformerAttention(tf.keras.layers.Layer):
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
         v_out = self._prepare_either_qkv(self.v(batch), head_size)
 
-        q_out = q_out * head_size**(-0.5)
+        q_out = q_out * head_size ** (-0.5)
 
         # TODO: fix padding
         if padding_mask is None:
             shape = batch.shape[:-1]
             padding_mask = tf.ones(shape, dtype=tf.bool)
 
-        batch = self.get_context(q_out, k_out, v_out, padding_mask=padding_mask, training=training)
+        batch = self.get_context(
+            q_out, k_out, v_out, padding_mask=padding_mask, training=training
+        )
         batch = self.projection(batch)
         return batch
 
     def get_context(self, q_out, k_out, v_out, padding_mask=None, training=False):
-
         def prepare_mask(padding_mask):
-            mask_shape = padding_mask.shape + (padding_mask.shape[1], )
+            mask_shape = padding_mask.shape + (padding_mask.shape[1],)
             attn_penalty = tf.constant(-10000, dtype=tf.float32)
             padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
             return tf.cast(padding_mask, tf.float32) * attn_penalty
 
         b, h, l, d = q_out.shape
-        attn_scores = tf.matmul(q_out, k_out, transpose_b=True) # "bhqd,bhkd->bhqk"
+        attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
 
         if padding_mask is not None:
             attn_scores += prepare_mask(padding_mask)
 
-        attn_scores = self.dropout(tf.nn.softmax(attn_scores, axis=-1), training=training)
-        context = tf.matmul(attn_scores, v_out) # "bhll,bhld->bhld"
+        attn_scores = self.dropout(
+            tf.nn.softmax(attn_scores, axis=-1), training=training
+        )
+        context = tf.matmul(attn_scores, v_out)  # "bhll,bhld->bhld"
         context = tf.transpose(context, perm=(0, 2, 1, 3))
-        return tf.reshape(context, (b, l, h*d))
+        return tf.reshape(context, (b, l, h * d))
 
     def _prepare_either_qkv(self, tensor, head_size):
         bsz, seqlen, _ = tensor.shape
         tensor = tf.reshape(tensor, (bsz, seqlen, self.num_heads, head_size))
-        return tf.transpose(tensor, perm=(0, 2, 1, 3)) # -> bsz, num_heads, seqlen, head_size
+        return tf.transpose(
+            tensor, perm=(0, 2, 1, 3)
+        )  # -> bsz, num_heads, seqlen, head_size
 
 
 class FeatureExtractorLayer(tf.keras.layers.Layer):
@@ -90,7 +95,10 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
 
         if layer_id == 0:
             self.layer_norm = GroupNormalization(
-                conv_dim, axis=-1, name="layer_norm", epsilon=1e-5,
+                conv_dim,
+                axis=-1,
+                name="layer_norm",
+                epsilon=1e-5,
             )
         else:
             self.layer_norm = None
@@ -163,18 +171,20 @@ class PositionalConvEmbedding(tf.keras.layers.Layer):
         super().__init__(name=name)
         self.is_gelu_approx = config.is_gelu_approx
 
-        self.conv = tf.keras.layers.Conv1D(
+        self.conv = Conv1DWithWeightNorm(
             config.hidden_size,
             config.num_conv_pos_embeddings,
-            padding="same",
+            num_conv_pos_embeddings=config.num_conv_pos_embeddings,
+            padding="valid",
             groups=config.num_conv_pos_embedding_groups,
             name="conv",
         )
-        # TODO: checkout weight norm
-        self.conv = WeightNormalization(self.conv, name="weight_norm", data_init=False)
+        self.num_pad_remove = 1 if config.num_conv_pos_embeddings % 2 == 0 else 0
 
     def call(self, batch):
         batch = self.conv(batch)
+        if self.num_pad_remove > 0:
+            batch = batch[:, : -self.num_pad_remove, :]
         batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
         return batch
 
@@ -196,7 +206,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
 
     def call(self, batch, padding_mask, training=False):
         pos_embed = self.pos_conv_embed(batch)
-        # batch += pos_embed
+        batch += pos_embed
         batch = self.dropout(self.layer_norm(batch), training=training)
         for layer in self.layers:
             # layer_drop from [paper](https://arxiv.org/abs/1909.11556)
@@ -280,7 +290,9 @@ class Wav2Vec2Model(TFKerasModel):
 class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with CTC/LM head"""
 
-    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec-ctc"):
+    def __init__(
+        self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec-ctc"
+    ):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")

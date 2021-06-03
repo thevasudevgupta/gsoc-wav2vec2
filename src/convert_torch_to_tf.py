@@ -17,16 +17,13 @@ MAPPING = (
     (".", "/"),
 )
 
-# TODO: fix them
 KEYS_TO_IGNORE = [
     "wav2vec2.masked_spec_embed",
-    "wav2vec2.encoder.pos_conv_embed.conv.weight_g",
 ]
 
 SPECIAL_MAPPING = {
-    "wav2vec2.encoder.pos_conv_embed.conv.bias": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/weight_norm/bias:0",
-    "wav2vec2.encoder.pos_conv_embed.conv.weight_g": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/weight_norm/g:0",
-    "wav2vec2.encoder.pos_conv_embed.conv.weight_v": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/weight_norm/kernel:0",
+    "wav2vec2.encoder.pos_conv_embed.conv.weight_g": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/conv/weight_g:0",
+    "wav2vec2.encoder.pos_conv_embed.conv.weight_v": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/conv/weight_v:0",
 }
 
 
@@ -54,13 +51,11 @@ def get_tf_pretrained_model(config, hf_model_id: str):
     for k in tqdm(hf_state_dict, desc="hf -> tf"):
         if k in KEYS_TO_IGNORE:
             continue
-        new_k = SPECIAL_MAPPING[k] if k in SPECIAL_MAPPING.keys() else replace(k)        
+        new_k = SPECIAL_MAPPING[k] if k in SPECIAL_MAPPING.keys() else replace(k)
         print(k, "->", new_k)
         array = hf_state_dict[k].numpy()
-        if k == "wav2vec2.encoder.pos_conv_embed.conv.weight_v":
+        if k in SPECIAL_MAPPING.keys():
             array = np.transpose(array, axes=(2, 1, 0))
-        elif k == "wav2vec2.encoder.pos_conv_embed.conv.weight_g":
-            array = array.squeeze()
         elif "kernel" in new_k:
             array = np.transpose(array)
 
@@ -84,3 +79,7 @@ if __name__ == "__main__":
     config = Wav2Vec2Config()
     tf_model = get_tf_pretrained_model(config, "facebook/wav2vec2-base-960h")
     tf_model.save_pretrained("wav2vec2-base-960h")
+
+# IMPORTANT POINTS:
+#     1) LAYER_NORM EPS CAN BE A REASON OF WIERD RESULTS
+#     2) CHECKOUT IF EVERY OUTPUT IS SCALED APPROPRIATELY

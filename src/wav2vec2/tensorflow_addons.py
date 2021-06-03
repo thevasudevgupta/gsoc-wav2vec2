@@ -4,39 +4,23 @@ from typeguard import typechecked
 
 class Conv1DWithWeightNorm(tf.keras.layers.Conv1D):
     """
-    tensorflow_addons.layers.WeightNormalization, nn.WeightNorm gives different results
+    tensorflow_addons.layers.WeightNormalization, torch.nn.WeightNorm gives different results
     So it's better to implement it for our use case.
     """
 
-    def __init__(self, *args, num_conv_pos_embeddings, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._padding = num_conv_pos_embeddings // 2
+    def __init__(self, *args, **kwargs):
+        self._padding = kwargs.pop("padding")
         self.filter_axis = 0
-        self.initialized = False
+        super().__init__(*args, **kwargs)
 
-    def _init_norm(self):
-        """Set the norm of the weight vector."""
-        kernel_norm = tf.sqrt(
-            tf.reduce_sum(tf.square(self.weight_v), axis=self.kernel_norm_axes)
-        )
-        self.weight_g.assign(kernel_norm[:, tf.newaxis, tf.newaxis])
-
-    def _compute_weights(self):
+    def _compute_kernel(self):
         """Generate weights with normalization."""
-
-        # `self.kernel_norm_axes` is determined by `self.filter_axis` and the rank
-        # of the layer kernel, and is thus statically known.
         self.kernel = (
             tf.nn.l2_normalize(self.weight_v, axis=self.kernel_norm_axes)
             * self.weight_g
         )
 
     def build(self, input_shape):
-        batch_size, seq_length, channels = tf.TensorShape(input_shape).as_list()
-        self.input_spec = tf.keras.layers.InputSpec(
-            shape=(batch_size, seq_length, channels)
-        )
-
         if not self.built:
             super().build(input_shape)
             kernel_norm_axes = list(range(self.kernel.shape.rank))
@@ -54,13 +38,17 @@ class Conv1DWithWeightNorm(tf.keras.layers.Conv1D):
                 dtype=self.weight_v.dtype,
                 trainable=True,
             )
+            self._init_weight_g()
+
+    def _init_weight_g(self):
+        """Set the norm of the weight vector."""
+        kernel_norm = tf.sqrt(
+            tf.reduce_sum(tf.square(self.weight_v), axis=self.kernel_norm_axes)
+        )
+        self.weight_g.assign(kernel_norm[:, tf.newaxis, tf.newaxis])
 
     def call(self, inputs):
-        if not self.initialized:
-            self._init_norm()
-            self.initialized = True
-
-        self._compute_weights()
+        self._compute_kernel()
         output = tf.pad(inputs, ((0, 0), (self._padding, self._padding), (0, 0)))
         return super().call(output)
 

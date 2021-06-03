@@ -30,15 +30,14 @@ class TransformerAttention(tf.keras.layers.Layer):
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
     def call(self, batch, padding_mask, training=False):
-        bsz, seqlen, hidden_size = batch.shape
-        head_size = hidden_size // self.num_heads
+        head_size = batch.shape[2] // self.num_heads
         q_out = self._prepare_either_qkv(self.q(batch), head_size)
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
         v_out = self._prepare_either_qkv(self.v(batch), head_size)
 
         q_out = q_out * head_size ** (-0.5)
 
-        # TODO: fix padding
+        # TODO: confirm padding_mask later
         if padding_mask is None:
             shape = batch.shape[:-1]
             padding_mask = tf.ones(shape, dtype=tf.bool)
@@ -49,18 +48,20 @@ class TransformerAttention(tf.keras.layers.Layer):
         batch = self.projection(batch)
         return batch
 
+    @staticmethod
+    def prepare_mask(padding_mask):
+        mask_shape = padding_mask.shape + (padding_mask.shape[1],)
+        attn_penalty = tf.constant(-10000, dtype=tf.float32)
+        padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
+        return tf.cast(padding_mask, tf.float32) * attn_penalty
+
     def get_context(self, q_out, k_out, v_out, padding_mask=None, training=False):
-        def prepare_mask(padding_mask):
-            mask_shape = padding_mask.shape + (padding_mask.shape[1],)
-            attn_penalty = tf.constant(-10000, dtype=tf.float32)
-            padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
-            return tf.cast(padding_mask, tf.float32) * attn_penalty
 
         b, h, l, d = q_out.shape
         attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
 
         if padding_mask is not None:
-            attn_scores += prepare_mask(padding_mask)
+            attn_scores += self.prepare_mask(padding_mask)
 
         attn_scores = self.dropout(
             tf.nn.softmax(attn_scores, axis=-1), training=training
@@ -174,19 +175,17 @@ class PositionalConvEmbedding(tf.keras.layers.Layer):
         self.conv = Conv1DWithWeightNorm(
             config.hidden_size,
             config.num_conv_pos_embeddings,
-            num_conv_pos_embeddings=config.num_conv_pos_embeddings,
-            padding="valid",
+            padding=config.num_conv_pos_embeddings // 2,
             groups=config.num_conv_pos_embedding_groups,
             name="conv",
         )
-        self.num_pad_remove = 1 if config.num_conv_pos_embeddings % 2 == 0 else 0
+        self.is_padding_wrong = config.num_conv_pos_embeddings % 2 == 0
 
     def call(self, batch):
         batch = self.conv(batch)
-        if self.num_pad_remove > 0:
-            batch = batch[:, : -self.num_pad_remove, :]
-        batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
-        return batch
+        if self.is_padding_wrong:
+            batch = batch[:, :-1, :]
+        return tf.nn.gelu(batch, approximate=self.is_gelu_approx)
 
 
 class Wav2Vec2Encoder(tf.keras.layers.Layer):

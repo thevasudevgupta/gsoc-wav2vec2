@@ -9,7 +9,7 @@ from dataclasses import replace
 
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
+from .tensorflow_addons import WeightNormalization, GroupNormalization
 from huggingface_hub import ModelHubMixin
 
 from .config import Wav2Vec2Config
@@ -89,8 +89,8 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
         )
 
         if layer_id == 0:
-            self.layer_norm = tfa.layers.GroupNormalization(
-                conv_dim, axis=1, name="layer_norm"
+            self.layer_norm = GroupNormalization(
+                conv_dim, axis=-1, name="layer_norm", epsilon=1e-5,
             )
         else:
             self.layer_norm = None
@@ -98,9 +98,7 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
     def call(self, batch):
         batch = self.conv_layer(batch)
         if self.layer_norm is not None:
-            batch = tf.transpose(batch, perm=(0, 2, 1))
             batch = self.layer_norm(batch)
-            batch = tf.transpose(batch, perm=(0, 2, 1))
         batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
         return batch
 
@@ -161,23 +159,22 @@ class TransformerLayer(tf.keras.layers.Layer):
 
 
 class PositionalConvEmbedding(tf.keras.layers.Layer):
-    def __init__(self, config):
-        self.is_gelu_apporx = config.is_gelu_approx
-        # TODO: checkout padding in conv
+    def __init__(self, config, name="pos_conv_embed"):
+        super().__init__(name=name)
+        self.is_gelu_approx = config.is_gelu_approx
+
         self.conv = tf.keras.layers.Conv1D(
             config.hidden_size,
             config.num_conv_pos_embeddings,
-            strides=config.num_conv_pos_embeddings,
+            padding="same",
             groups=config.num_conv_pos_embedding_groups,
+            name="conv",
         )
         # TODO: checkout weight norm
-        # self.weight_norm =
-        self.num_pad_remove = 1 if config.num_conv_pos_embeddings % 2 == 0 else 0
+        self.conv = WeightNormalization(self.conv, name="weight_norm", data_init=False)
 
     def call(self, batch):
         batch = self.conv(batch)
-        if self.num_pad_remove > 0:
-            batch = batch[:, :, :, -self.num_pad_remove]
         batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
         return batch
 
@@ -187,7 +184,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         super().__init__(name=name)
         self.layer_drop = config.layer_drop
 
-        # self.pos_conv_embed = PositionalConvEmbedding(config)
+        self.pos_conv_embed = PositionalConvEmbedding(config, name="pos_conv_embed")
         self.layer_norm = tf.keras.layers.LayerNormalization(
             epsilon=config.layer_norm_eps, name="layer_norm"
         )
@@ -198,7 +195,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         ]
 
     def call(self, batch, padding_mask, training=False):
-        # pos_embed = self.pos_conv_embed(batch)
+        pos_embed = self.pos_conv_embed(batch)
         # batch += pos_embed
         batch = self.dropout(self.layer_norm(batch), training=training)
         for layer in self.layers:
@@ -236,14 +233,15 @@ class TFKerasModel(tf.keras.Model):
         else:
             print(f"Loading weights locally from `{save_dir}`")
 
+        input_shape = config_kwargs.pop("input_shape")
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
         config = replace(config, **config_kwargs)
-        model = cls(config)
+        model = cls(config, input_shape=input_shape)
         model.load_weights(os.path.join(save_dir, "tf_model.h5"))
         print("Total number of loaded variables:", len(model.variables))
         return model
 
-    def _init(self, input_shape=(1, 128)):
+    def _init(self, input_shape=None):
         """Build Model weights using dummy inputs"""
         # call this at the end only
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
@@ -268,7 +266,6 @@ class Wav2Vec2Model(TFKerasModel):
         self.encoder = Wav2Vec2Encoder(config, name="encoder")
 
     def call(self, batch, padding_mask=None, training=False):
-
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
             batch = feature_extractor_layer(batch)
@@ -283,7 +280,7 @@ class Wav2Vec2Model(TFKerasModel):
 class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with CTC/LM head"""
 
-    def __init__(self, config: Wav2Vec2Config, name="wav2vec-ctc"):
+    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec-ctc"):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
@@ -293,7 +290,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size, name="lm_head")
 
-        self._init(input_shape=(1, 1024))
+        self._init(input_shape=input_shape)
 
     def call(self, batch, padding_mask=None, training=False):
         # batch - (bsz, seqlen)

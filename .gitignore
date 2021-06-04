@@ -2,5 +2,6 @@
 __pycache__/
 data/
 dummy/
+timit/
 workspace.code-workspace
 wav2vec2-base-960h/

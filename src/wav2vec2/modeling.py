@@ -15,6 +15,13 @@ from .config import Wav2Vec2Config
 from .tensorflow_addons import Conv1DWithWeightNorm, GroupNormalization
 
 
+def prepare_attn_mask(padding_mask):
+    mask_shape = padding_mask.shape + (padding_mask.shape[1],)
+    attn_penalty = tf.constant(-10000, dtype=tf.float32)
+    padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
+    return tf.cast(padding_mask, tf.float32) * attn_penalty
+
+
 class TransformerAttention(tf.keras.layers.Layer):
     """Attention layer from `Attention Is All You Need`"""
 
@@ -48,20 +55,13 @@ class TransformerAttention(tf.keras.layers.Layer):
         batch = self.projection(batch)
         return batch
 
-    @staticmethod
-    def prepare_mask(padding_mask):
-        mask_shape = padding_mask.shape + (padding_mask.shape[1],)
-        attn_penalty = tf.constant(-10000, dtype=tf.float32)
-        padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
-        return tf.cast(padding_mask, tf.float32) * attn_penalty
-
     def get_context(self, q_out, k_out, v_out, padding_mask=None, training=False):
 
         b, h, l, d = q_out.shape
         attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
 
         if padding_mask is not None:
-            attn_scores += self.prepare_mask(padding_mask)
+            attn_scores += prepare_attn_mask(padding_mask)
 
         attn_scores = self.dropout(
             tf.nn.softmax(attn_scores, axis=-1), training=training

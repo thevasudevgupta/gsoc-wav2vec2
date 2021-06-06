@@ -1,58 +1,53 @@
-
-from dataclasses import dataclass
-import tensorflow as tf
 import os
-import soundfile as sf
+from dataclasses import dataclass
 
-
-def collate_fn(batch):
-    batch = tf.convert_to_tensor(batch, dtype=tf.float32)
-    return batch
+import tensorflow as tf
 
 
 @dataclass
 class DataLoader:
-    is_train: bool
     data_dir: str = "data"
     batch_size: int = 4
-    audio_maxlen: int = -1
+    audio_maxlen: int = 50000
 
     file_pattern: str = ".wav"
     buffer_size: int = 10000
 
-    def list_files(self):
-        return 
+    def decode_wav(self, file_path):
+        audio, _ = tf.audio.decode_wav(tf.io.read_file(file_path))
+        return tf.squeeze(audio)[: self.audio_maxlen]
 
-    def fetch_audio(self, f):
-        print(f)
-        f = f.numpy().item()
-        audio, samplerate = sf.read(os.path.join(self.data_dir, f))
-        assert samplerate == 16000, "It is advisable to have sample rate of 16000 for training Wav2Vec2"
-        return audio[None, :self.audio_maxlen]
-
-    def __call__(self):
-        dataset = self._fetch_dataset()
-        if self.is_train:
-            dataset.shuffle(self.buffer_size)        
-        dataset = dataset.padded_batch(self.batch_size).map(collate_fn)
+    def __call__(self, is_train=False):
+        file_paths = []
+        self._fetch_and_push_files(self.data_dir, file_paths)
+        print(f"We could load {len(file_paths)} files from `{self.data_dir}` directory")
+        dataset = tf.data.Dataset.from_tensor_slices(file_paths).map(self.decode_wav)
+        if is_train:
+            dataset.shuffle(self.buffer_size)
+        dataset = dataset.padded_batch(self.batch_size, padded_shapes=self.audio_maxlen)
         return dataset
 
-    def _fetch_dataset(self):
-        file_path = os.path.join(self.data_dir, "*" + self.file_pattern)
-        return tf.data.Dataset.list_files(file_path).map(self.fetch_audio)
+    def _fetch_and_push_files(self, data_dir, file_paths):
+        """All files will be recursively collected from the `data_dir`"""
+        ls = os.listdir(data_dir)
+        for f in ls:
+            f = os.path.join(data_dir, f)
+            if f.endswith(self.file_pattern):
+                f = os.path.abspath(f)
+                file_paths.append(f)
+                continue
+
+            if os.path.isdir(f):
+                self._fetch_and_push_files(f, file_paths)
 
 
 if __name__ == "__main__":
     """Testing Area"""
 
-    tr_dataloader = DataLoader(is_train=True, data_dir="timit/data/TRAIN/DR1/FCJF0", batch_size=4)
-    print(tr_dataloader)
-    tr_dataset = tr_dataloader()
+    tr_dataset = DataLoader(data_dir="timit/data/TRAIN")(is_train=True)
 
     for batch in tr_dataset:
-        print(batch)
-        exit()
+        print("BATCH SHAPE", batch.shape)
+        break
 
-    # val_dataloader = DataLoader(is_train=False, batch_size=4)
-    # print(val_dataloader)
-    # val_dataset = val_dataloader()
+    val_dataset = DataLoader(data_dir="timit/data/TEST")(is_train=False)

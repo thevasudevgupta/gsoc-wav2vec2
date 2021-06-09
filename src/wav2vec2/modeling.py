@@ -15,13 +15,6 @@ from .config import Wav2Vec2Config
 from .tensorflow_addons import Conv1DWithWeightNorm, GroupNormalization
 
 
-def prepare_attn_mask(padding_mask):
-    mask_shape = padding_mask.shape + (padding_mask.shape[1],)
-    attn_penalty = tf.constant(-10000, dtype=tf.float32)
-    padding_mask = tf.broadcast_to(~padding_mask, mask_shape)
-    return tf.cast(padding_mask, tf.float32) * attn_penalty
-
-
 class TransformerAttention(tf.keras.layers.Layer):
     """Attention layer from `Attention Is All You Need`"""
 
@@ -36,7 +29,7 @@ class TransformerAttention(tf.keras.layers.Layer):
 
         self.dropout = tf.keras.layers.Dropout(config.dropout)
 
-    def call(self, batch, padding_mask, training=False):
+    def call(self, batch, training=False):
         head_size = batch.shape[2] // self.num_heads
         q_out = self._prepare_either_qkv(self.q(batch), head_size)
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
@@ -44,24 +37,14 @@ class TransformerAttention(tf.keras.layers.Layer):
 
         q_out = q_out * head_size ** (-0.5)
 
-        # TODO: confirm padding_mask later
-        if padding_mask is None:
-            shape = batch.shape[:-1]
-            padding_mask = tf.ones(shape, dtype=tf.bool)
-
-        batch = self.get_context(
-            q_out, k_out, v_out, padding_mask=padding_mask, training=training
-        )
+        batch = self.get_context(q_out, k_out, v_out, training=training)
         batch = self.projection(batch)
         return batch
 
-    def get_context(self, q_out, k_out, v_out, padding_mask=None, training=False):
+    def get_context(self, q_out, k_out, v_out, training=False):
 
         b, h, l, d = q_out.shape
         attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
-
-        if padding_mask is not None:
-            attn_scores += prepare_attn_mask(padding_mask)
 
         attn_scores = self.dropout(
             tf.nn.softmax(attn_scores, axis=-1), training=training
@@ -149,11 +132,11 @@ class TransformerLayer(tf.keras.layers.Layer):
             name="final_layer_norm",
         )
 
-    def call(self, batch, padding_mask, training=False):
+    def call(self, batch, training=False):
 
         # self_attn
         residual = batch
-        batch = self.attention(batch, padding_mask, training=training)
+        batch = self.attention(batch, training=training)
         batch = self.dropout(batch, training=training)
         batch = self.layer_norm(batch + residual)
 
@@ -203,7 +186,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
             for i in range(config.num_layers)
         ]
 
-    def call(self, batch, padding_mask, training=False):
+    def call(self, batch, training=False):
         pos_embed = self.pos_conv_embed(batch)
         batch += pos_embed
         batch = self.dropout(self.layer_norm(batch), training=training)
@@ -212,7 +195,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
             drop_prob = np.random.uniform(0, 1)
             if training and (drop_prob < self.layer_drop):
                 continue
-            batch = layer(batch, padding_mask, training=training)
+            batch = layer(batch, training=training)
         return batch
 
 
@@ -228,7 +211,7 @@ class TFKerasModel(tf.keras.Model):
     def from_pretrained(cls, model_id, **config_kwargs):
         """Model has to be in public repo"""
 
-        save_dir = model_id.split("/")[-1]
+        save_dir = model_id
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir, exist_ok=True)
             config_url = f"wget https://huggingface.co/{model_id}/resolve/main/config.json -P {save_dir}"
@@ -274,7 +257,7 @@ class Wav2Vec2Model(TFKerasModel):
         self.feature_projection = FeatureProjection(config, name="feature_projection")
         self.encoder = Wav2Vec2Encoder(config, name="encoder")
 
-    def call(self, batch, padding_mask=None, training=False):
+    def call(self, batch, training=False):
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
             batch = feature_extractor_layer(batch)
@@ -282,12 +265,16 @@ class Wav2Vec2Model(TFKerasModel):
 
         # TODO: apply spec-augment to batch later (useful for training only)
 
-        batch = self.encoder(batch, padding_mask=padding_mask, training=training)
+        batch = self.encoder(batch, training=training)
         return batch
+
+    def freeze_feature_extractor(self):
+        for i in range(len(self.model.feature_extractor)):
+            self.model.feature_extractor[i].trainable = False
 
 
 class Wav2Vec2ForCTC(TFKerasModel):
-    """Wave2Vec2 model with CTC/LM head"""
+    """Wave2Vec2 model with a CTC head"""
 
     def __init__(
         self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec-ctc"
@@ -303,9 +290,13 @@ class Wav2Vec2ForCTC(TFKerasModel):
 
         self._init(input_shape=input_shape)
 
-    def call(self, batch, padding_mask=None, training=False):
+    def freeze_feature_extractor(self):
+        self.model.freeze_feature_extractor()
+        print("total number of trainable variables:", len(self.trainable_variables))
+
+    def call(self, batch, training=False):
         # batch - (bsz, seqlen)
-        batch = self.model(batch, padding_mask=padding_mask, training=training)
+        batch = self.model(batch, training=training)
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)
 

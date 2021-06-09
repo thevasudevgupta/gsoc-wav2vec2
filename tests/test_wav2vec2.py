@@ -17,6 +17,7 @@ from wav2vec2 import Wav2Vec2ForCTC
 
 MODEL_ID = "wav2vec2-base-960h"
 HF_MODEL_ID = "facebook/wav2vec2-base-960h"
+SEED = 0
 
 if is_torch_available():
     import torch
@@ -35,6 +36,9 @@ class Wav2Vec2Tester(unittest.TestCase):
 
         batch, _ = tf.audio.decode_wav(tf.io.read_file("data/sample.wav"))
         batch = tf.transpose(batch, perm=(1, 0))
+        
+        tf.random.set_seed(SEED)
+        batch = tf.concat([batch, tf.random.normal(batch.shape)], axis=0)
         hf_batch = torch.from_numpy(batch.numpy()).float()
 
         tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
@@ -47,6 +51,7 @@ class Wav2Vec2Tester(unittest.TestCase):
         with torch.no_grad():
             hf_out = hf_model(hf_batch)["logits"]
 
+        print("difference:", np.max(hf_out.numpy() - tf_out.numpy()))
         assert tf_out.shape == hf_out.shape
         assert np.allclose(hf_out.numpy(), tf_out.numpy(), atol=0.004)
 

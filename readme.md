@@ -4,3 +4,12 @@ This repositary hosts my work on the project with [TensorFlow](https://github.co
 
 | Mentors | [Jaeyoun Kim](https://github.com/jaeyounkim), [Morgan Roff](https://www.linkedin.com/in/morganroff), [Sayak Paul](https://www.linkedin.com/in/sayak-paul) |
 |---------|-------------------------------------------------------------------------------------------------------------|
+
+## Using this Repositary
+
+**Running tests**
+
+```shell
+# run this from root of this repositary
+pytest -sv tests
+```

@@ -4,17 +4,20 @@
 """Run this script to launch training"""
 
 import tensorflow as tf
+
 from trainer import Trainer
 from wav2vec2 import Wav2Vec2ForCTC
+
+from .data_utils import DataLoader
 
 MODEL_ID = "wav2vec2-base"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID)
-    tr_dataset: tf.data.Dataset
-    val_dataset: tf.data.Dataset
+    tr_dataset = DataLoader(data_dir="timit/data/TRAIN")(is_train=True)
+    val_dataset = DataLoader(data_dir="timit/data/TEST")(is_train=False)
 
     T = Trainer(lr=2e-4, max_epochs=2)
     optimizer = tf.keras.optimizers.Adam(lr=T.lr)

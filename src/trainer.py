@@ -3,11 +3,12 @@
 
 """Simple Trainer for handling TensorFlow Model Training"""
 
-from dataclasses import dataclass, asdict
-from tqdm.auto import tqdm
+from dataclasses import asdict, dataclass
 
 import tensorflow as tf
 import wandb
+from tqdm.auto import tqdm
+
 
 @dataclass
 class Trainer:
@@ -23,7 +24,9 @@ class Trainer:
     def setup(self, model, optimizer):
         self.model = model
         self.optimizer = optimizer
-        self.logger = wandb.init(project_name=self.project_name, run_name=self.run_name, config=asdict(self))
+        self.logger = wandb.init(
+            project_name=self.project_name, run_name=self.run_name, config=asdict(self)
+        )
 
     def train(self, tr_dataset, val_dataset):
 
@@ -34,17 +37,20 @@ class Trainer:
                 loss = self.train_on_batch(batch, epoch)
                 total_loss += loss
 
-                if (i+1) % self.logging_steps == 0:
-                    self.logger.log({
-                        "step": i+1,
-                        "tr_loss": total_loss.numpy() / (i+1)
-                    }, commit=True)
+                if (i + 1) % self.logging_steps == 0:
+                    self.logger.log(
+                        {"step": i + 1, "tr_loss": total_loss.numpy() / (i + 1)},
+                        commit=True,
+                    )
 
             eval_loss = self.evaluate(val_dataset)
-            self.logger.log({
-                "eval_loss": eval_loss.numpy(),
-                "epoch": epoch,
-            }, commit=False)
+            self.logger.log(
+                {
+                    "eval_loss": eval_loss.numpy(),
+                    "epoch": epoch,
+                },
+                commit=False,
+            )
 
     # @tf.function(autograph=True, jit_compile=True)
     def train_on_batch(self, batch):
@@ -68,7 +74,7 @@ class Trainer:
         for i, batch in pbar:
             loss = self.evaluate_on_batch(batch)
             total_loss += loss
-        return total_loss / (i+1)
+        return total_loss / (i + 1)
 
     def save_training_state(self, save_dir: str):
         raise NotImplementedError

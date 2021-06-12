@@ -51,11 +51,11 @@ class TransformerAttention(tf.keras.layers.Layer):
         )
         context = tf.matmul(attn_scores, v_out)  # "bhll,bhld->bhld"
         context = tf.transpose(context, perm=(0, 2, 1, 3))
-        return tf.reshape(context, (b, l, h * d))
+        return tf.reshape(context, (-1, l, h * d))
 
     def _prepare_either_qkv(self, tensor, head_size):
         bsz, seqlen, _ = tensor.shape
-        tensor = tf.reshape(tensor, (bsz, seqlen, self.num_heads, head_size))
+        tensor = tf.reshape(tensor, (-1, seqlen, self.num_heads, head_size))
         return tf.transpose(
             tensor, perm=(0, 2, 1, 3)
         )  # -> bsz, num_heads, seqlen, head_size
@@ -225,7 +225,7 @@ class TFKerasModel(tf.keras.Model):
         else:
             print(f"Loading weights locally from `{save_dir}`")
 
-        input_shape = config_kwargs.pop("input_shape")
+        input_shape = config_kwargs.pop("input_shape", None)
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
         config = replace(config, **config_kwargs)
         model = cls(config, input_shape=input_shape)
@@ -236,6 +236,8 @@ class TFKerasModel(tf.keras.Model):
     def _init(self, input_shape=None):
         """Build Model weights using dummy inputs"""
         # call this at the end only
+        if input_shape is None:
+            input_shape = (1, 2048)
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
         return self(dummy_input)
 
@@ -300,7 +302,10 @@ class Wav2Vec2ForCTC(TFKerasModel):
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)
 
-        # TODO: implement loss
-        loss = None
+        outputs = {"logits": batch}
+        if training:
+            # TODO: implement loss
+            loss = None
+            outputs.update({"loss": loss})
 
-        return {"loss": loss, "logits": batch}
+        return outputs

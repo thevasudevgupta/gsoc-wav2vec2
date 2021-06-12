@@ -1,5 +1,5 @@
 import importlib
-
+import unittest
 
 def is_transformers_available():
     # return importlib.util.find_spec("transformers") is not None
@@ -16,21 +16,12 @@ def is_torch_available():
     return importlib.util.find_spec("torch") is not None
 
 
-def requires_transformers(fn):
-    def call(*args, **kwargs):
-        if is_transformers_available():
-            return fn(*args, **kwargs)
-        else:
-            print(f"skipping - {fn.__name__} (since `transformers` is not available)")
-
-    return call
-
-
-def requires_torch(fn):
-    def call(*args, **kwargs):
-        if is_torch_available():
-            return fn(args, **kwargs)
-        else:
-            print(f"skipping - {fn.__name__} (since `torch` is not available)")
-
-    return call
+def requires_lib(test_case, lib: list):
+    mapping = {
+        "torch": is_torch_available(),
+        "transformers": is_transformers_available(),
+    }
+    conditions = [mapping[k] for k in lib]
+    if not all(conditions):
+        return unittest.skip(f"{lib} NOT AVAILABLE")(test_case)
+    return test_case

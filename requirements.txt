@@ -1,5 +1,3 @@
 tensorflow
 wandb
-black
-isort
 huggingface-hub

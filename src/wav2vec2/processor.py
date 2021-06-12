@@ -7,7 +7,7 @@ import tensorflow as tf
 
 @dataclass
 class Wav2Vec2Processer:
-    is_tokenizer: bool # whether to use as `feature_extractor` or `tokenizer`
+    is_tokenizer: bool  # whether to use as `feature_extractor` or `tokenizer`
     do_normalize: bool = True
     vocab_path: str = "../data/vocab.json"
 

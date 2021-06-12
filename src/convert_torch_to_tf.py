@@ -3,9 +3,9 @@
 
 import numpy as np
 import tensorflow as tf
-import transformers
 from tqdm.auto import tqdm
 
+import transformers
 from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC
 
 PREFIX = "wav2vec-ctc/"

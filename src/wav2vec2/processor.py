@@ -6,7 +6,7 @@ import tensorflow as tf
 
 
 @dataclass
-class Wav2Vec2Processer:
+class Wav2Vec2Processor:
     is_tokenizer: bool  # whether to use as `feature_extractor` or `tokenizer`
     do_normalize: bool = True
     vocab_path: str = "../data/vocab.json"
@@ -65,15 +65,15 @@ class Wav2Vec2Processer:
     def _normalize(self, x):
         """You must call this before padding"""
         # -> (1, seqlen)
-        mean = tf.reduce_mean(x, axis=1, keepdims=True)
-        var = tf.math.reduce_variance(x, axis=1, keepdims=True)
-        return (x - mean) / tf.sqrt(var + 1e-5)
+        mean = tf.reduce_mean(x, axis=-1, keepdims=True)
+        var = tf.math.reduce_variance(x, axis=-1, keepdims=True)
+        return tf.squeeze((x - mean) / tf.sqrt(var + 1e-5))
 
 
 if __name__ == "__main__":
     """Testing Area"""
 
-    feature_extractor = Wav2Vec2Processer(is_tokenizer=False)
+    feature_extractor = Wav2Vec2Processor(is_tokenizer=False)
     batch, _ = tf.audio.decode_wav(tf.io.read_file("../data/sample.wav"))
     batch = tf.transpose(batch, perm=(1, 0))
     batch = tf.concat([batch, batch], axis=0)
@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
     print("\n\n")
 
-    tokenizer = Wav2Vec2Processer(is_tokenizer=True)
+    tokenizer = Wav2Vec2Processor(is_tokenizer=True)
     ids = tokenizer("vasudev gupta is a data scientist.")
     print(ids)
     print(tokenizer.decode(ids))

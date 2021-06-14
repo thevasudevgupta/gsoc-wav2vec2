@@ -1,3 +1,5 @@
 tensorflow
 wandb
 huggingface-hub
+tensorflow_io
+jiwer

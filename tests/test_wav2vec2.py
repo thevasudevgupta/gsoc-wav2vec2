@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 from utils import is_torch_available, is_transformers_available, requires_lib
 
-from wav2vec2 import Wav2Vec2ForCTC, Wav2Vec2Processer
+from wav2vec2 import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 MODEL_ID = "wav2vec2-base-960h"
 HF_MODEL_ID = "facebook/wav2vec2-base-960h"
@@ -71,7 +71,7 @@ class Wav2Vec2Tester(unittest.TestCase):
     @partial(requires_lib, lib=["transformers"])
     def test_feature_extractor(self):
         batch, hf_batch = self._get_batches()
-        tf_processor = Wav2Vec2Processer(is_tokenizer=False)
+        tf_processor = Wav2Vec2Processor(is_tokenizer=False)
         hf_processor = HFWav2Vec2FeatureExtractor.from_pretrained(HF_MODEL_ID)
 
         tf_out = tf_processor(batch)
@@ -92,7 +92,7 @@ class Wav2Vec2Tester(unittest.TestCase):
         batch = tf.concat([b1[:, :40000], b2[:, :40000]], axis=0)
 
         # data processing
-        tf_processor = Wav2Vec2Processer(is_tokenizer=False)
+        tf_processor = Wav2Vec2Processor(is_tokenizer=False)
         hf_processor = HFWav2Vec2FeatureExtractor.from_pretrained(HF_MODEL_ID)
 
         hf_batch = hf_processor(batch.numpy().tolist())["input_values"]
@@ -120,7 +120,7 @@ class Wav2Vec2Tester(unittest.TestCase):
         ), f"difference:, {np.max(hf_out - tf_out)}"
 
         # decoding
-        tf_tokenizer = Wav2Vec2Processer(
+        tf_tokenizer = Wav2Vec2Processor(
             is_tokenizer=True, vocab_path="data/vocab.json"
         )
         hf_tokenizer = HFWav2Vec2CTCTokenizer.from_pretrained(HF_MODEL_ID)

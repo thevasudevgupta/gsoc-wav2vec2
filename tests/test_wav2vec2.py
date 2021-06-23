@@ -1,29 +1,27 @@
-import sys
-
-sys.path.append("./src")
-
 import unittest
 from functools import partial
 
-import numpy as np
 import tensorflow as tf
+
+import numpy as np
+from convert_torch_to_tf import get_tf_pretrained_model
 from utils import is_torch_available, is_transformers_available, requires_lib
+from wav2vec2 import CTCLoss, Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Processor
+from wav2vec2.tensorflow_addons import Conv1DWithWeightNorm
 
-from wav2vec2 import Wav2Vec2ForCTC, Wav2Vec2Processor
-
-MODEL_ID = "wav2vec2-base-960h"
-HF_MODEL_ID = "facebook/wav2vec2-base-960h"
-SEED = 0
 
 if is_torch_available():
     import torch
+    import torch.nn as nn
 
 if is_transformers_available():
-    from transformers import (
-        Wav2Vec2ForCTC as HFWav2Vec2ForCTC,
-        Wav2Vec2FeatureExtractor as HFWav2Vec2FeatureExtractor,
-        Wav2Vec2CTCTokenizer as HFWav2Vec2CTCTokenizer,
-    )
+    from transformers import Wav2Vec2CTCTokenizer as HFWav2Vec2CTCTokenizer
+    from transformers import Wav2Vec2FeatureExtractor as HFWav2Vec2FeatureExtractor
+    from transformers import Wav2Vec2ForCTC as HFWav2Vec2ForCTC
+
+MODEL_ID = "vasudevgupta/tf-wav2vec2-base-960h"
+HF_MODEL_ID = "facebook/wav2vec2-base-960h"
+SEED = 0
 
 
 class Wav2Vec2Tester(unittest.TestCase):
@@ -34,7 +32,12 @@ class Wav2Vec2Tester(unittest.TestCase):
         tf.random.set_seed(SEED)
         batch = tf.concat([batch, tf.random.normal(batch.shape)], axis=0)
         hf_batch = torch.from_numpy(batch.numpy()).float()
-        return batch, hf_batch
+
+        np.random.seed(SEED)
+        labels = np.random.randint(1, 30, size=(2, 24))
+        tf_labels = tf.convert_to_tensor(labels, dtype=tf.int32)
+        hf_labels = torch.from_numpy(labels).long()
+        return batch, hf_batch, tf_labels, hf_labels
 
     @partial(requires_lib, lib=["torch", "transformers"])
     def _test_inference(self, test_graph_mode=False):
@@ -42,25 +45,33 @@ class Wav2Vec2Tester(unittest.TestCase):
         def tf_forward(*args, **kwargs):
             return tf_model(*args, **kwargs)
 
-        batch, hf_batch = self._get_batches()
+        batch, hf_batch, tf_labels, hf_labels = self._get_batches()
 
         tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
+        loss_fn = CTCLoss(tf_model.config, batch.shape)
         hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
 
         if test_graph_mode:
-            tf_out = tf_forward(batch, training=False)["logits"]
+            tf_out = tf_forward(batch, training=False)
         else:
-            tf_out = tf_model(batch, training=False)["logits"]
+            tf_out = tf_model(batch, training=False)
         with torch.no_grad():
-            hf_out = hf_model(hf_batch)["logits"]
+            hf_out = hf_model(hf_batch, labels=hf_labels)
 
-        tf_out = tf_out.numpy()
-        hf_out = hf_out.numpy()
+        tf_logits = tf_out.numpy()
+        hf_logits = hf_out["logits"].numpy()
 
-        assert tf_out.shape == hf_out.shape
+        hf_loss = hf_out["loss"].numpy()
+        tf_loss = loss_fn(tf_out, tf_labels).numpy()
+
+        assert tf_logits.shape == hf_logits.shape, "Oops, logits shape is not matching"
         assert np.allclose(
-            hf_out, tf_out, atol=0.004
-        ), f"difference:, {np.max(hf_out - tf_out)}"
+            hf_logits, tf_logits, atol=0.004
+        ), f"difference: {np.max(hf_logits - tf_logits)}"
+
+        assert np.allclose(
+            tf_loss, hf_loss, atol=1e-3
+        ), f"difference: {np.max(tf_loss - hf_loss)}"
 
     def test_inference(self):
         self._test_inference(test_graph_mode=False)
@@ -70,7 +81,7 @@ class Wav2Vec2Tester(unittest.TestCase):
 
     @partial(requires_lib, lib=["transformers"])
     def test_feature_extractor(self):
-        batch, hf_batch = self._get_batches()
+        batch, hf_batch, _, _ = self._get_batches()
         tf_processor = Wav2Vec2Processor(is_tokenizer=False)
         hf_processor = HFWav2Vec2FeatureExtractor.from_pretrained(HF_MODEL_ID)
 
@@ -108,7 +119,7 @@ class Wav2Vec2Tester(unittest.TestCase):
         tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
         hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
 
-        tf_out = tf_model(batch, training=False)["logits"]
+        tf_out = tf_model(batch, training=False)
         with torch.no_grad():
             hf_out = hf_model(hf_batch)["logits"]
         tf_out = tf_out.numpy()
@@ -131,3 +142,97 @@ class Wav2Vec2Tester(unittest.TestCase):
         tf_pred = [tf_tokenizer.decode(output) for output in tf_out.tolist()]
         hf_pred = hf_tokenizer.batch_decode(hf_out)
         assert tf_pred == hf_pred, f"{tf_pred} VS {hf_pred}"
+
+    def test_conversion_script(self):
+        config = Wav2Vec2Config()
+        tf_model = get_tf_pretrained_model(config, HF_MODEL_ID, verbose=False)
+        tf_model(tf.ones((1, 1024), dtype=tf.float32))
+
+    @partial(requires_lib, lib=["torch", "transformers"])
+    def test_loss_autograph(self):
+        """
+        This is very important test and shows how model forward pass should be written
+
+        Note:
+            1. `Wav2Vec2ForCTC.call()` & `CTCLoss.__call__` both works in eager mode
+            2. In graph mode, `Wav2Vec2ForCTC.call()` doesn't work with `jit_compile=False` while it works when `jit_compile=True`
+            3. In graph mode, `CTCLoss.__call__` doesn't work with `jit_compile=True` while it works when `jit_compile=False`
+        """
+
+        @tf.function
+        def tf_forward(batch, labels):
+            batch = tf.function(tf_model, jit_compile=True)(batch, training=False)
+            loss = tf.function(loss_fn)(batch, labels)
+            return loss, batch
+
+        batch, hf_batch, tf_labels, hf_labels = self._get_batches()
+
+        tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
+        loss_fn = CTCLoss(tf_model.config, batch.shape)
+
+        hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
+
+        tf_loss, tf_logits = tf_forward(batch, labels=tf_labels)
+        with torch.no_grad():
+            hf_out = hf_model(hf_batch, labels=hf_labels)
+
+        hf_loss = hf_out["loss"].numpy()
+        tf_loss = tf_loss.numpy()
+
+        assert (
+            tf_logits.shape == hf_out["logits"].shape
+        ), "Oops, logits shape is not matching"
+
+        logits_difference = np.max(hf_out["logits"].numpy() - tf_logits.numpy())
+        assert np.allclose(
+            hf_out["logits"].numpy(), tf_logits.numpy(), atol=0.004
+        ), f"difference: {logits_difference}"
+
+        assert np.allclose(
+            tf_loss, hf_loss, atol=1e-3
+        ), f"difference: {np.max(tf_loss - hf_loss)}"
+
+    @partial(requires_lib, lib=["torch"])
+    def test_conv_weight_norm(self):
+        bsz = 2
+        seqlen = 128
+        c_in = 32
+        filters = 16
+        kernal_size = 3
+        padding = 1
+        num_groups = 2
+
+        np.random.seed(SEED)
+        array = np.random.uniform(size=(bsz, seqlen, c_in))
+        tf_tensor = tf.convert_to_tensor(array, dtype=tf.float32)
+
+        # `nn.Conv1d` accepts (batch_size, channels, seqlen)
+        torch_tensor = torch.tensor(array, dtype=torch.float32).transpose(2, 1)
+
+        tf_layer = Conv1DWithWeightNorm(
+            filters, kernal_size, padding=padding, groups=num_groups
+        )
+        tf_layer(tf_tensor)  # build tensorflow weights
+
+        torch_layer = nn.Conv1d(
+            c_in, filters, kernal_size, padding=padding, groups=num_groups
+        )
+        torch_layer = nn.utils.weight_norm(torch_layer, dim=2)
+
+        # torch & tensorflow weights should be equal
+        torch_layer.weight_v.data = torch.tensor(
+            np.transpose(tf_layer.variables[1].numpy(), axes=(2, 1, 0))
+        )
+        torch_layer.bias.data = torch.tensor(tf_layer.variables[0].numpy())
+        torch_layer.weight_g.data = torch.tensor(
+            np.transpose(tf_layer.variables[2].numpy(), axes=(2, 1, 0))
+        )
+
+        # forward pass
+        with torch.no_grad():
+            torch_out = torch_layer(torch_tensor).transpose(2, 1).numpy()
+        tf_out = tf_layer(tf_tensor).numpy()
+
+        assert np.allclose(
+            torch_out, tf_out, atol=1e-4
+        ), f"Difference: {torch_out} vs {tf_out}"

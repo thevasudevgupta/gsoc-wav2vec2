@@ -3,12 +3,11 @@ import unittest
 
 
 def is_transformers_available():
-    # return importlib.util.find_spec("transformers") is not None
     try:
         import transformers
 
         is_available = True
-    except:
+    except ImportError:
         is_available = False
     return is_available
 

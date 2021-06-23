@@ -1,7 +1,12 @@
 .DS_Store
+.vscode/
+vasudevgupta/
+debugger.ipynb
+wav2vec2.egg-info/
 __pycache__/
 data/
 dummy/
 timit/
 workspace.code-workspace
 wav2vec2-base-960h/
+tf-wav2vec2-base-960h/

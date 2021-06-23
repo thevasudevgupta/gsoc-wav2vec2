@@ -1,215 +1,53 @@
-# __author__ = "Vasudev Gupta"
-# __author_email__ = "7vasudevgupta@gmail.com"
-
 """TensorFlow implementation of Wav2Vec2"""
 
 import os
 import subprocess
 from dataclasses import replace
 
-import numpy as np
 import tensorflow as tf
+
 from huggingface_hub import ModelHubMixin
 
 from .config import Wav2Vec2Config
-from .tensorflow_addons import Conv1DWithWeightNorm, GroupNormalization
-
-
-class TransformerAttention(tf.keras.layers.Layer):
-    """Attention layer from `Attention Is All You Need`"""
-
-    def __init__(self, config, name="attention"):
-        super().__init__(name=name)
-        self.num_heads = config.num_heads
-
-        self.q = tf.keras.layers.Dense(config.hidden_size, name="q_proj")
-        self.k = tf.keras.layers.Dense(config.hidden_size, name="k_proj")
-        self.v = tf.keras.layers.Dense(config.hidden_size, name="v_proj")
-        self.projection = tf.keras.layers.Dense(config.hidden_size, name="out_proj")
-
-        self.dropout = tf.keras.layers.Dropout(config.dropout)
-
-    def call(self, batch, training=False):
-        head_size = batch.shape[2] // self.num_heads
-        q_out = self._prepare_either_qkv(self.q(batch), head_size)
-        k_out = self._prepare_either_qkv(self.k(batch), head_size)
-        v_out = self._prepare_either_qkv(self.v(batch), head_size)
-
-        q_out = q_out * head_size ** (-0.5)
-
-        batch = self.get_context(q_out, k_out, v_out, training=training)
-        batch = self.projection(batch)
-        return batch
-
-    def get_context(self, q_out, k_out, v_out, training=False):
-
-        b, h, l, d = q_out.shape
-        attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
-
-        attn_scores = self.dropout(
-            tf.nn.softmax(attn_scores, axis=-1), training=training
-        )
-        context = tf.matmul(attn_scores, v_out)  # "bhll,bhld->bhld"
-        context = tf.transpose(context, perm=(0, 2, 1, 3))
-        return tf.reshape(context, (-1, l, h * d))
-
-    def _prepare_either_qkv(self, tensor, head_size):
-        bsz, seqlen, _ = tensor.shape
-        tensor = tf.reshape(tensor, (-1, seqlen, self.num_heads, head_size))
-        return tf.transpose(
-            tensor, perm=(0, 2, 1, 3)
-        )  # -> bsz, num_heads, seqlen, head_size
-
-
-class FeatureExtractorLayer(tf.keras.layers.Layer):
-    def __init__(self, config, layer_id=0, name=None):
-        super().__init__(name=name)
-        self.is_gelu_approx = config.is_gelu_approx
-        conv_dim = config.filter_sizes[layer_id]
-        kernal_size = config.kernal_sizes[layer_id]
-        stride = config.strides[layer_id]
-
-        self.conv_layer = tf.keras.layers.Conv1D(
-            conv_dim,
-            kernal_size,
-            strides=stride,
-            use_bias=config.conv_bias,
-            name="conv",
-        )
-
-        if layer_id == 0:
-            self.layer_norm = GroupNormalization(
-                conv_dim,
-                axis=-1,
-                name="layer_norm",
-                epsilon=1e-5,
-            )
-        else:
-            self.layer_norm = None
-
-    def call(self, batch):
-        batch = self.conv_layer(batch)
-        if self.layer_norm is not None:
-            batch = self.layer_norm(batch)
-        batch = tf.nn.gelu(batch, approximate=self.is_gelu_approx)
-        return batch
-
-
-class FeatureProjection(tf.keras.layers.Layer):
-    def __init__(self, config, name="feature_projection"):
-        super().__init__(name=name)
-        self.layer_norm = tf.keras.layers.LayerNormalization(
-            epsilon=config.layer_norm_eps, name="layer_norm"
-        )
-        self.projection = tf.keras.layers.Dense(config.hidden_size, name="projection")
-        self.dropout = tf.keras.layers.Dropout(config.dropout)
-
-    def call(self, batch, training=False):
-        batch = self.layer_norm(batch)
-        batch = self.projection(batch)
-        return self.dropout(batch, training=training)
-
-
-class TransformerLayer(tf.keras.layers.Layer):
-    def __init__(self, config, name=None):
-        super().__init__(name=name)
-        self.is_gelu_approx = config.is_gelu_approx
-
-        self.attention = TransformerAttention(config, name="attention")
-        self.dropout = tf.keras.layers.Dropout(config.dropout)
-
-        self.layer_norm = tf.keras.layers.LayerNormalization(
-            epsilon=config.layer_norm_eps, name="layer_norm"
-        )
-        self.intermediate = tf.keras.layers.Dense(
-            config.intermediate_size, name="feed_forward/intermediate_dense"
-        )
-        self.attn_output = tf.keras.layers.Dense(
-            config.hidden_size, name="feed_forward/output_dense"
-        )
-        self.final_layer_norm = tf.keras.layers.LayerNormalization(
-            epsilon=config.layer_norm_eps,
-            name="final_layer_norm",
-        )
-
-    def call(self, batch, training=False):
-
-        # self_attn
-        residual = batch
-        batch = self.attention(batch, training=training)
-        batch = self.dropout(batch, training=training)
-        batch = self.layer_norm(batch + residual)
-
-        # ffn
-        residual = batch
-        batch = tf.nn.gelu(self.intermediate(batch), approximate=self.is_gelu_approx)
-        batch = self.dropout(batch, training=training)
-        batch = self.dropout(self.attn_output(batch), training=training)
-        batch = self.final_layer_norm(batch + residual)
-
-        return batch
-
-
-class PositionalConvEmbedding(tf.keras.layers.Layer):
-    def __init__(self, config, name="pos_conv_embed"):
-        super().__init__(name=name)
-        self.is_gelu_approx = config.is_gelu_approx
-
-        self.conv = Conv1DWithWeightNorm(
-            config.hidden_size,
-            config.num_conv_pos_embeddings,
-            padding=config.num_conv_pos_embeddings // 2,
-            groups=config.num_conv_pos_embedding_groups,
-            name="conv",
-        )
-        self.is_padding_wrong = config.num_conv_pos_embeddings % 2 == 0
-
-    def call(self, batch):
-        batch = self.conv(batch)
-        if self.is_padding_wrong:
-            batch = batch[:, :-1, :]
-        return tf.nn.gelu(batch, approximate=self.is_gelu_approx)
-
-
-class Wav2Vec2Encoder(tf.keras.layers.Layer):
-    def __init__(self, config, name="encoder"):
-        super().__init__(name=name)
-        self.layer_drop = config.layer_drop
-
-        self.pos_conv_embed = PositionalConvEmbedding(config, name="pos_conv_embed")
-        self.layer_norm = tf.keras.layers.LayerNormalization(
-            epsilon=config.layer_norm_eps, name="layer_norm"
-        )
-        self.dropout = tf.keras.layers.Dropout(config.dropout)
-        self.layers = [
-            TransformerLayer(config, name=f"layers/{i}")
-            for i in range(config.num_layers)
-        ]
-
-    def call(self, batch, training=False):
-        pos_embed = self.pos_conv_embed(batch)
-        batch += pos_embed
-        batch = self.dropout(self.layer_norm(batch), training=training)
-        for layer in self.layers:
-            # layer_drop from [paper](https://arxiv.org/abs/1909.11556)
-            drop_prob = np.random.uniform(0, 1)
-            if training and (drop_prob < self.layer_drop):
-                continue
-            batch = layer(batch, training=training)
-        return batch
+from .encoder import Wav2Vec2Encoder
+from .feature_extractor import FeatureExtractorLayer, FeatureProjection
 
 
 class TFKerasModel(tf.keras.Model):
     def save_pretrained(self, save_dir):
+        """
+        This method will save model weights and config in `save_directory`
+        """
         self.config.save_pretrained(save_dir)
         self.save_weights(os.path.join(save_dir, "tf_model.h5"))
 
-    def push_to_hub(self, directory, model_id):
+    def push_to_hub(self, directory: str, model_id: str):
+        """
+        Use this method to push your model weights to HuggingFace Hub
+
+        Args:
+            directory (:obj: `str`):
+                directory where model weights are prensent
+            model_id (:obj: `str`):
+                Name of the repositary in HuggingFace Hub you want to push to
+        """
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
     @classmethod
-    def from_pretrained(cls, model_id, **config_kwargs):
-        """Model has to be in public repo"""
+    def from_pretrained(cls, model_id, **config_kwargs) -> tf.keras.Model:
+        """
+        This will load model weights from the dictionary specified or download it from HuggingFace Hub
+        if weights are not available locally
+
+        Args:
+            model_id (:obj: `str`):
+                Directory where weights are present or model_id if needs to be downloaded from HuggingFace Hub
+            config_kwargs (:obj: `dict`)
+                Extra arguments will be passed to `Wav2Vec2Config`
+
+        Returns:
+            Instance of `tf.keras.Model` initialized from trained weights.
+        """
 
         save_dir = model_id
         if not os.path.isdir(save_dir):
@@ -217,11 +55,18 @@ class TFKerasModel(tf.keras.Model):
             config_url = f"wget https://huggingface.co/{model_id}/resolve/main/config.json -P {save_dir}"
             model_url = f"wget https://huggingface.co/{model_id}/resolve/main/tf_model.h5 -P {save_dir}"
 
+            print(
+                f"Downloading model weights from `https://huggingface.co/{model_id}` ... ",
+                end="",
+            )
             try:
                 for url in [config_url, model_url]:
                     subprocess.run(url.split(), check=True, stderr=subprocess.PIPE)
             except:
-                raise ValueError(f"Couldn't download model weights from {model_url}")
+                raise ValueError(
+                    f"Couldn't download model weights from `https://huggingface.co/{model_id}`"
+                )
+            print("Done")
         else:
             print(f"Loading weights locally from `{save_dir}`")
 
@@ -248,31 +93,80 @@ class Wav2Vec2Model(TFKerasModel):
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
 
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.apply_spec_augment = config.apply_spec_augment
+
         num_feature_extractor_layers = len(config.filter_sizes)
 
         self.feature_extractor = [
             FeatureExtractorLayer(
-                config, layer_id=i, name=f"feature_extractor/conv_layers/{i}"
+                config.filter_sizes,
+                config.kernal_sizes,
+                config.strides,
+                conv_bias=config.conv_bias,
+                is_gelu_approx=config.is_gelu_approx,
+                layer_id=i,
+                name=f"feature_extractor/conv_layers/{i}",
             )
             for i in range(num_feature_extractor_layers)
         ]
-        self.feature_projection = FeatureProjection(config, name="feature_projection")
-        self.encoder = Wav2Vec2Encoder(config, name="encoder")
+        self.feature_projection = FeatureProjection(
+            config.hidden_size,
+            layer_norm_eps=config.layer_norm_eps,
+            dropout=config.dropout,
+            name="feature_projection",
+        )
+        self.encoder = Wav2Vec2Encoder(
+            config.hidden_size,
+            config.num_heads,
+            config.num_layers,
+            config.intermediate_size,
+            config.num_conv_pos_embeddings,
+            config.num_conv_pos_embedding_groups,
+            layer_drop=config.layer_drop,
+            dropout=config.dropout,
+            layer_norm_eps=config.layer_norm_eps,
+            is_gelu_approx=config.is_gelu_approx,
+            name="encoder",
+        )
+
+    def build(self, input_shape):
+        self.masked_spec_augment = self.add_weight(
+            name="masked_spec_embed",
+            shape=(self.hidden_size,),
+            initializer="uniform",
+            trainable=True,
+        )
 
     def call(self, batch, training=False):
+        """
+        Args:
+            batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
+                Sound tensor obtained from `Wav2Vec2Processor.__call__`.
+            training (:obj: `bool`, `optional`):
+                Whether to use model for training.
+
+        Returns:
+            Logits from the model of shape (batch_size, seqlen, hidden_dim).
+        """
+
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
             batch = feature_extractor_layer(batch)
         batch = self.feature_projection(batch, training=training)
 
-        # TODO: apply spec-augment to batch later (useful for training only)
+        # TODO: apply spec-augmentation
+        if training and self.apply_spec_augment:
+            raise NotImplementedError
 
         batch = self.encoder(batch, training=training)
         return batch
 
     def freeze_feature_extractor(self):
-        for i in range(len(self.model.feature_extractor)):
-            self.model.feature_extractor[i].trainable = False
+        """This will freeze the feature extractor layers (Recommended to use for fine-tuning)"""
+        for i in range(len(self.feature_extractor)):
+            self.feature_extractor[i].trainable = False
 
 
 class Wav2Vec2ForCTC(TFKerasModel):
@@ -285,6 +179,8 @@ class Wav2Vec2ForCTC(TFKerasModel):
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
         self.config = config
+        self.pad_id = config.pad_id
+        self.loss_reduction = config.loss_reduction
 
         self.model = Wav2Vec2Model(config, name="wav2vec2")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
@@ -293,19 +189,62 @@ class Wav2Vec2ForCTC(TFKerasModel):
         self._init(input_shape=input_shape)
 
     def freeze_feature_extractor(self):
+        """This will freeze the feature extractor layers (Recommended to use for fine-tuning)"""
         self.model.freeze_feature_extractor()
-        print("total number of trainable variables:", len(self.trainable_variables))
 
-    def call(self, batch, training=False):
-        # batch - (bsz, seqlen)
+    def call(self, batch: tf.Tensor, training=False):
+        """
+        Args:
+            batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
+                Sound tensor obtained from `Wav2Vec2Processor.__call__`.
+            training (:obj: `bool`, `optional`):
+                Whether to use model for training.
+        Returns:
+            Logits from the model of shape (batch_size, seqlen, vocab_size).
+        """
         batch = self.model(batch, training=training)
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)
+        return batch
 
-        outputs = {"logits": batch}
-        if training:
-            # TODO: implement loss
-            loss = None
-            outputs.update({"loss": loss})
+    def compile(self, optimizer, loss_fn, loss_tracker):
+        super().compile(optimizer=optimizer)
+        self.loss_fn = loss_fn
+        self.loss_tracker = loss_tracker
 
-        return outputs
+    @property
+    def metrics(self):
+        """TFKeras will call `metric.reset_states()` because of this method"""
+        return [self.loss_tracker]
+
+    def train_step(self, data):
+        """
+        Args:
+            data (:obj: `tf.data.Dataset`):
+                This data will be fed into `model.call()`
+
+        Returns:
+            Avg-running loss at epoch level
+        """
+        speech, labels = data
+
+        with tf.GradientTape() as gtape:
+            logits = self.forward(speech, training=True)
+            loss = self.loss_fn(logits, labels)
+
+        gradients = gtape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+
+        self.loss_tracker.update_state(loss)
+        return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data):
+        speech, labels = data
+        logits = self.forward(speech, training=False)
+        loss = self.loss_fn(logits, labels)
+        return {"eval_loss": loss}
+
+    tf.function(jit_compile=True)
+    def forward(self, *args, **kwargs):
+        """In graph mode, forward pass only works with jit-compile"""
+        return self(*args, **kwargs)

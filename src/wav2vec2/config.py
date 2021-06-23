@@ -1,6 +1,3 @@
-# __author__ = "Vasudev Gupta"
-# __author_email__ = "7vasudevgupta@gmail.com"
-
 import json
 import os
 from dataclasses import asdict, dataclass, field
@@ -17,6 +14,10 @@ class Wav2Vec2Config:
     is_gelu_approx: bool = False
     layer_norm_eps: float = 1e-5
     layer_drop: float = 0.1
+    pad_id: int = 0
+    loss_reduction: str = field(
+        default="sum", metadata={"help": "Possible values are `mean` & `sum`"}
+    )
 
     # positional embedding
     num_conv_pos_embeddings: int = 128
@@ -30,11 +31,21 @@ class Wav2Vec2Config:
     strides: list = field(default_factory=lambda: [5, 2, 2, 2, 2, 2, 2])
     conv_bias: bool = False
 
+    # spec augmentation arguments
+    apply_spec_augment: bool = False  # TODO: fix this
+    mask_time_prob: float = 0.05
+    mask_time_length: int = 10
+
     def __post_init__(self):
         if not (len(self.filter_sizes) == len(self.kernal_sizes) == len(self.strides)):
-            raise ValueError("len of filter_sizes, kernal_sizes, strides must much")
+            raise ValueError("len of filter_sizes, kernal_sizes, strides must match")
         if self.hidden_size % self.num_heads != 0:
             raise ValueError("Hidden size must be perfect multiple of num_heads")
+
+        assert self.loss_reduction in [
+            "mean",
+            "sum",
+        ], "Possible values of `loss_reduction` are `mean` & `sum`"
 
     def save_pretrained(self, save_dir):
         os.makedirs(save_dir, exist_ok=True)

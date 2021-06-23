@@ -9,7 +9,8 @@ This repositary hosts my work on the project with [TensorFlow](https://github.co
 
 | Description                               | Link                                      |
 |-------------------------------------------|-------------------------------------------|
-| Wav2Vec2 inference (in TensorFlow-2) on LibriSpeech test dataset using original checkpoint | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_inference.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> |
+| Wav2Vec2 **evaluation on LibriSpeech dataset** using original fine-tuned checkpoint | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech-evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> |
+| TensorFlow Wav2Vec2 for **Automatic Speech Recognition** | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2-inference.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> |
 
 ## Using this Repositary
 

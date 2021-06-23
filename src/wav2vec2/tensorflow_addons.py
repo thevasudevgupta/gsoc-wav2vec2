@@ -52,6 +52,11 @@ class Conv1DWithWeightNorm(tf.keras.layers.Conv1D):
         output = tf.pad(inputs, ((0, 0), (self._padding, self._padding), (0, 0)))
         return super().call(output)
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({"padding": self._padding})
+        return config
+
 
 # FOLLOWING CODE IS DIRECTLY TAKEN FROM OFFICIAL TENSORFLOW_ADDONS
 # ITS TAKEN TO MAKE THIS PROJECT INDEPENDENT OF TENSORFLOW VERSION

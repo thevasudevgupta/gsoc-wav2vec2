@@ -3,10 +3,9 @@ import transformers
 
 import numpy as np
 from tqdm.auto import tqdm
-from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC
+from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Model
 
 
-PREFIX = "wav2vec-ctc/"
 SUFFIX = ":0"
 MAPPING = (
     ("layer_norm.weight", "layer_norm/gamma"),
@@ -18,39 +17,57 @@ MAPPING = (
 # fill-in PyTorch keys to ignore below
 KEYS_TO_IGNORE = []
 
-SPECIAL_MAPPING = {
-    "wav2vec2.encoder.pos_conv_embed.conv.weight_g": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/conv/weight_g:0",
-    "wav2vec2.encoder.pos_conv_embed.conv.weight_v": "wav2vec-ctc/wav2vec2/encoder/pos_conv_embed/conv/weight_v:0",
+HF_IDS_WITH_HEADS = ["facebook/wav2vec2-base-960h"]
+
+PREFIX_WITH_HEAD = "wav2vec2-ctc/"
+SPECIAL_MAPPING_WITH_HEAD = {
+    "wav2vec2.encoder.pos_conv_embed.conv.weight_g": f"{PREFIX_WITH_HEAD}wav2vec2/encoder/pos_conv_embed/conv/weight_g:0",
+    "wav2vec2.encoder.pos_conv_embed.conv.weight_v": f"{PREFIX_WITH_HEAD}wav2vec2/encoder/pos_conv_embed/conv/weight_v:0",
+}
+
+PREFIX_WITHOUT_HEAD = "wav2vec2/"
+SPECIAL_MAPPING_WITHOUT_HEAD = {
+    "encoder.pos_conv_embed.conv.weight_g": f"{PREFIX_WITHOUT_HEAD}encoder/pos_conv_embed/conv/weight_g:0",
+    "encoder.pos_conv_embed.conv.weight_v": f"{PREFIX_WITHOUT_HEAD}encoder/pos_conv_embed/conv/weight_v:0",
 }
 
 
-def replace(k: str) -> str:
+def replace(k: str, prefix) -> str:
     """
-    Converts PyTorch state_dict keys to TensorFlow varible name
+    Converts PyTorch state_dict keys to TensorFlow varible name.
     """
     for hf_v, tf_v in MAPPING:
         k = k.replace(hf_v, tf_v)
-    return PREFIX + k + SUFFIX
+    return prefix + k + SUFFIX
 
 
 def get_tf_pretrained_model(
-    config: Wav2Vec2Config, hf_model_id: str, verbose: bool = False
+    config: Wav2Vec2Config, hf_model_id: str, verbose=False
 ) -> Wav2Vec2ForCTC:
     """
-    Converts HF PyTorch weights to TensorFlow compatible weights
+    Converts HF PyTorch weights to TensorFlow compatible weights.
 
     Args:
         config (:obj: `Wav2Vec2Config`):
-            Configuration of TF model
+            Configuration of TF model.
         hf_model_id (:obj: `str`):
-            model_id of HuggingFace PyTorch model
+            model_id of HuggingFace PyTorch model.
 
     Returns:
-        Instance of `Wav2Vec2ForCTC` loaded with pre-trained weights
+        Instance of `Wav2Vec2ForCTC` loaded with pre-trained weights.
     """
 
-    tf_model = Wav2Vec2ForCTC(config)
-    hf_model = transformers.Wav2Vec2ForCTC.from_pretrained(hf_model_id)
+    with_head = True if hf_model_id in HF_IDS_WITH_HEADS else False
+
+    if with_head:
+        tf_model = Wav2Vec2ForCTC(config)
+        prefix = PREFIX_WITH_HEAD
+        hf_model = transformers.Wav2Vec2ForCTC.from_pretrained(hf_model_id)
+    else:
+        tf_model = Wav2Vec2Model(config)
+        tf_model._init(input_shape=(1, 2048))
+        prefix = PREFIX_WITHOUT_HEAD
+        hf_model = transformers.Wav2Vec2Model.from_pretrained(hf_model_id)
 
     hf_state_dict = hf_model.state_dict()
 
@@ -64,21 +81,26 @@ def get_tf_pretrained_model(
     for k in tqdm(hf_state_dict, desc="hf -> tf"):
         if k in KEYS_TO_IGNORE:
             continue
-        new_k = SPECIAL_MAPPING[k] if k in SPECIAL_MAPPING.keys() else replace(k)
-        if verbose:
-            print(k, "->", new_k)
+
+        if k in SPECIAL_MAPPING_WITH_HEAD or k in SPECIAL_MAPPING_WITHOUT_HEAD:
+            new_k = SPECIAL_MAPPING_WITH_HEAD[k] if with_head else SPECIAL_MAPPING_WITHOUT_HEAD[k]
+        else:
+            new_k = replace(k, prefix=prefix)
 
         if new_k not in tf_variables_dict.keys():
             extra_keys.append(k)
             print(f"SKIPPING {k}")
             continue
 
+        if verbose:
+            print(k, "->", new_k)
+
         array = hf_state_dict[k].numpy()
 
         # transpose the PyTorch weights for correct loading in TF-2
         # Weights corresponding to `SPECIAL_MAPPING` are 3D array while other weights are 2D
         # so we need to separate weights first & do special transpose on 3D weights
-        if k in SPECIAL_MAPPING.keys():
+        if k in SPECIAL_MAPPING_WITH_HEAD or k in SPECIAL_MAPPING_WITHOUT_HEAD:
             array = np.transpose(array, axes=(2, 1, 0))
         elif "kernel" in new_k:
             array = np.transpose(array)
@@ -89,12 +111,16 @@ def get_tf_pretrained_model(
 
     tf.keras.backend.batch_set_value(tf_weights)
 
-    return tf_model
+    return tf_model, hf_model
 
 
 if __name__ == "__main__":
+
+    hf_model_id = "facebook/wav2vec2-base"
+
     config = Wav2Vec2Config()
-    tf_model = get_tf_pretrained_model(
-        config, "facebook/wav2vec2-base-960h", verbose=True
-    )
-    tf_model.save_pretrained("wav2vec2-base-960h")
+    tf_model, _ = get_tf_pretrained_model(config, hf_model_id, verbose=False)
+
+    model_id = "tf-" + hf_model_id.split("/")[-1]
+    tf_model.save_pretrained(model_id)
+    print("TF model saved in", model_id)

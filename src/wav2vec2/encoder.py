@@ -78,9 +78,10 @@ class TransformerLayer(tf.keras.layers.Layer):
         super().__init__(name=name)
         self.hidden_size = hidden_size
         self.num_heads = num_heads
-        self.dropout = dropout
-        self.is_gelu_approx = is_gelu_approx
+        self.intermediate_size = intermediate_size
         self.layer_norm_eps = layer_norm_eps
+        self.is_gelu_approx = is_gelu_approx
+        self.dropout = dropout
 
         self.attention = TransformerAttention(
             hidden_size, num_heads, dropout=dropout, name="attention"
@@ -234,8 +235,10 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
             # layer_drop from [paper](https://arxiv.org/abs/1909.11556)
             drop_prob = np.random.uniform(0, 1)
             if training and (drop_prob < self.layer_drop):
-                continue
-            batch = layer(batch, training=training)
+                # not using the returned value
+                _ = layer(batch, training=training)
+            else:
+                batch = layer(batch, training=training)
         return batch
 
     def get_config(self):

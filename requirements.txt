@@ -1,6 +1,6 @@
-tensorflow
+# tensorflow
 wandb
 huggingface-hub
-tensorflow_io
+soundfile
 jiwer
 typeguard

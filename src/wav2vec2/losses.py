@@ -2,30 +2,30 @@ import tensorflow as tf
 
 
 class CTCLoss:
-    def __init__(self, config, input_shape):
+    def __init__(self, config, input_shape, division_factor=1):
         self.kernal_sizes = config.kernal_sizes
         self.strides = config.strides
         self.pad_id = config.pad_id
-        self.loss_reduction = config.loss_reduction
+        self.division_factor = division_factor
 
-        self.input_shape = input_shape
+        self.model_input_shape = input_shape
 
     def __call__(self, hidden_states, labels):
         """
-        This methods wraps up `tf.nn.ctc_loss` and returns the ctc-loss for batch
+        This methods wraps up `tf.nn.ctc_loss` and returns the ctc-loss for batch.
 
         Args:
             hidden_states (:obj: `tf.Tensor`):
-                This is the output of LM head of `Wav2Vec2ForCTC.call(...)`
+                This is the output of LM head of `Wav2Vec2ForCTC.call(...)`.
             labels (:obj: `tf.Tensor`):
-                This is batch of tokenized text labels
+                This is batch of tokenized text labels.
 
         Returns:
             loss (:obj: `tf.Tensor`):
                 This is the summation/mean of CTC loss of the batch. Mean/Summation will be decided by
-                `loss_reduction` parameter in your config
+                `loss_reduction` parameter in your config.
         """
-        input_length = tf.ones(self.input_shape[0]) * self.input_shape[1]
+        input_length = tf.ones(self.model_input_shape[0]) * self.model_input_shape[1]
         logit_length = self._get_logit_length(input_length)
 
         label_mask = tf.cast(labels != self.pad_id, tf.int32)
@@ -41,12 +41,8 @@ class CTCLoss:
             name="ctc-loss",
         )
 
-        if self.loss_reduction == "sum":
-            loss = tf.reduce_sum(loss)
-        else:
-            loss = tf.reduce_mean(loss)
-
-        return loss
+        loss = tf.reduce_sum(loss)
+        return loss / self.division_factor
 
     def _get_logit_length(self, input_length):
         """

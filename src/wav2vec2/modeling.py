@@ -11,25 +11,26 @@ from huggingface_hub import ModelHubMixin
 from .config import Wav2Vec2Config
 from .encoder import Wav2Vec2Encoder
 from .feature_extractor import FeatureExtractorLayer, FeatureProjection
+from .spec_augment import apply_spec_augmentation
 
 
 class TFKerasModel(tf.keras.Model):
     def save_pretrained(self, save_dir):
         """
-        This method will save model weights and config in `save_directory`
+        This method will save model weights and config in `save_directory`.
         """
         self.config.save_pretrained(save_dir)
         self.save_weights(os.path.join(save_dir, "tf_model.h5"))
 
     def push_to_hub(self, directory: str, model_id: str):
         """
-        Use this method to push your model weights to HuggingFace Hub
+        Use this method to push your model weights to HuggingFace Hub.
 
         Args:
             directory (:obj: `str`):
-                directory where model weights are prensent
+                directory where model weights are prensent.
             model_id (:obj: `str`):
-                Name of the repositary in HuggingFace Hub you want to push to
+                Name of the repositary in HuggingFace Hub you want to push to.
         """
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
@@ -37,13 +38,13 @@ class TFKerasModel(tf.keras.Model):
     def from_pretrained(cls, model_id, **config_kwargs) -> tf.keras.Model:
         """
         This will load model weights from the dictionary specified or download it from HuggingFace Hub
-        if weights are not available locally
+        if weights are not available locally.
 
         Args:
             model_id (:obj: `str`):
-                Directory where weights are present or model_id if needs to be downloaded from HuggingFace Hub
+                Directory where weights are present or model_id if needs to be downloaded from HuggingFace Hub.
             config_kwargs (:obj: `dict`)
-                Extra arguments will be passed to `Wav2Vec2Config`
+                Extra arguments will be passed to `Wav2Vec2Config`.
 
         Returns:
             Instance of `tf.keras.Model` initialized from trained weights.
@@ -56,7 +57,7 @@ class TFKerasModel(tf.keras.Model):
             model_url = f"wget https://huggingface.co/{model_id}/resolve/main/tf_model.h5 -P {save_dir}"
 
             print(
-                f"Downloading model weights from `https://huggingface.co/{model_id}` ... ",
+                f"Downloading model weights from https://huggingface.co/{model_id} ... ",
                 end="",
             )
             try:
@@ -64,13 +65,13 @@ class TFKerasModel(tf.keras.Model):
                     subprocess.run(url.split(), check=True, stderr=subprocess.PIPE)
             except:
                 raise ValueError(
-                    f"Couldn't download model weights from `https://huggingface.co/{model_id}`"
+                    f"Couldn't download model weights from https://huggingface.co/{model_id}"
                 )
             print("Done")
         else:
             print(f"Loading weights locally from `{save_dir}`")
 
-        input_shape = config_kwargs.pop("input_shape", None)
+        input_shape = config_kwargs.pop("input_shape", (1, 2048))
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
         config = replace(config, **config_kwargs)
         model = cls(config, input_shape=input_shape)
@@ -88,14 +89,18 @@ class TFKerasModel(tf.keras.Model):
 
 
 class Wav2Vec2Model(TFKerasModel):
-    def __init__(self, config: Wav2Vec2Config, name="wav2vec2"):
+    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec2"):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
 
         self.config = config
         self.hidden_size = config.hidden_size
+
+        # spec-augmentation
         self.apply_spec_augment = config.apply_spec_augment
+        self.mask_time_prob = config.mask_time_prob
+        self.mask_time_length = config.mask_time_length
 
         num_feature_extractor_layers = len(config.filter_sizes)
 
@@ -131,6 +136,9 @@ class Wav2Vec2Model(TFKerasModel):
             name="encoder",
         )
 
+        if input_shape is not None:
+            self._init(input_shape=input_shape)
+
     def build(self, input_shape):
         self.masked_spec_augment = self.add_weight(
             name="masked_spec_embed",
@@ -156,40 +164,43 @@ class Wav2Vec2Model(TFKerasModel):
             batch = feature_extractor_layer(batch)
         batch = self.feature_projection(batch, training=training)
 
-        # TODO: apply spec-augmentation
         if training and self.apply_spec_augment:
-            raise NotImplementedError
+            batch = apply_spec_augmentation(
+                batch,
+                self.masked_spec_augment,
+                self.mask_time_prob,
+                self.mask_time_length,
+            )
 
         batch = self.encoder(batch, training=training)
         return batch
 
     def freeze_feature_extractor(self):
-        """This will freeze the feature extractor layers (Recommended to use for fine-tuning)"""
+        """This will freeze the feature extractor layers (Recommended to use for fine-tuning)."""
         for i in range(len(self.feature_extractor)):
             self.feature_extractor[i].trainable = False
 
 
 class Wav2Vec2ForCTC(TFKerasModel):
-    """Wave2Vec2 model with a CTC head"""
+    """Wave2Vec2 model with a CTC head."""
 
     def __init__(
-        self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec-ctc"
+        self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec2-ctc"
     ):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
-            raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
+            raise ValueError("`config` must be an instace of `Wave2Vec2Config`.")
         self.config = config
         self.pad_id = config.pad_id
-        self.loss_reduction = config.loss_reduction
 
-        self.model = Wav2Vec2Model(config, name="wav2vec2")
+        self.model = Wav2Vec2Model(config, input_shape=None, name="wav2vec2")
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size, name="lm_head")
 
         self._init(input_shape=input_shape)
 
     def freeze_feature_extractor(self):
-        """This will freeze the feature extractor layers (Recommended to use for fine-tuning)"""
+        """This will freeze the feature extractor layers (Recommended to use for fine-tuning)."""
         self.model.freeze_feature_extractor()
 
     def call(self, batch: tf.Tensor, training=False):
@@ -207,44 +218,53 @@ class Wav2Vec2ForCTC(TFKerasModel):
         batch = self.lm_head(batch)
         return batch
 
-    def compile(self, optimizer, loss_fn, loss_tracker):
-        super().compile(optimizer=optimizer)
+
+class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
+    def compile(self, optimizer, steps_per_execution, loss_fn):
+        super().compile(optimizer=optimizer, steps_per_execution=steps_per_execution)
         self.loss_fn = loss_fn
-        self.loss_tracker = loss_tracker
+        self.tr_loss_tracker = tf.keras.metrics.Mean(name="tr_loss")
+        self.val_loss_tracker = tf.keras.metrics.Mean(name="val_loss")
 
     @property
     def metrics(self):
-        """TFKeras will call `metric.reset_states()` because of this method"""
-        return [self.loss_tracker]
+        """TFKeras will call `metric.reset_states()` because of this method."""
+        return [self.tr_loss_tracker, self.val_loss_tracker]
 
     def train_step(self, data):
         """
         Args:
             data (:obj: `tf.data.Dataset`):
-                This data will be fed into `model.call()`
+                This data will be fed into `model.call()`.
 
         Returns:
-            Avg-running loss at epoch level
+            Avg-running loss at epoch level.
         """
         speech, labels = data
 
         with tf.GradientTape() as gtape:
             logits = self.forward(speech, training=True)
+
+            print("LOGIT_SHAPE", logits.shape)
+            print("LABELS_SHAPE", labels.shape)
             loss = self.loss_fn(logits, labels)
+            print("LOSS_SHAPE", loss.shape)
 
         gradients = gtape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.loss_tracker.update_state(loss)
-        return {m.name: m.result() for m in self.metrics}
+        self.tr_loss_tracker.update_state(loss)
+        return {"tr_loss": self.tr_loss_tracker.result()}
 
     def test_step(self, data):
         speech, labels = data
         logits = self.forward(speech, training=False)
         loss = self.loss_fn(logits, labels)
-        return {"eval_loss": loss}
 
-    tf.function(jit_compile=True)
+        self.val_loss_tracker.update_state(loss)
+        return {"val_loss": self.val_loss_tracker.result()}
+
+    @tf.function(jit_compile=True)
     def forward(self, *args, **kwargs):
-        """In graph mode, forward pass only works with jit-compile"""
+        """In graph mode, forward pass only works with jit-compile."""
         return self(*args, **kwargs)

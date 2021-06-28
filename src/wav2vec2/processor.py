@@ -70,7 +70,7 @@ class Wav2Vec2Processor:
 
     def decode(self, input_ids: list, skip_special_tokens=True, group_tokens=True):
         """
-        Use this method to decode your ids back to string
+        Use this method to decode your ids back to string.
 
         Args:
             input_ids (:obj: `list`):
@@ -97,7 +97,7 @@ class Wav2Vec2Processor:
         return vocab
 
     def _normalize(self, x):
-        """You must call this before padding"""
+        """You must call this before padding."""
         # -> (1, seqlen)
         mean = tf.reduce_mean(x, axis=-1, keepdims=True)
         var = tf.math.reduce_variance(x, axis=-1, keepdims=True)

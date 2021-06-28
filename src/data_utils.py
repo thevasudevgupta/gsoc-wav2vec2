@@ -1,19 +1,45 @@
 import os
 from dataclasses import dataclass
+from functools import partial
+from typing import List, Tuple
 
 import tensorflow as tf
-import tensorflow_io as tfio
+import soundfile as sf
 
+import numpy as np
 from wav2vec2 import Wav2Vec2Processor
 
 
+SPEECH_DTYPE = np.float32
+LABEL_DTYPE = np.int32
 AUTOTUNE = tf.data.AUTOTUNE
+
+
+def tfrecords_generator(files):
+    def _read_tfrecord(record):
+        if isinstance(record, tf.Tensor):
+            record = record.numpy()
+
+        record = tf.train.Example.FromString(record)
+        speech_bytes = record.features.feature["speech"].bytes_list.value[0]
+        label_bytes = record.features.feature["label"].bytes_list.value[0]
+
+        speech = np.frombuffer(speech_bytes, dtype=SPEECH_DTYPE)
+        label = np.frombuffer(label_bytes, dtype=LABEL_DTYPE)
+
+        return tf.constant(speech, dtype=tf.float32), tf.constant(label, dtype=tf.int32)
+
+    records = tf.data.TFRecordDataset(files)
+    for record in records:
+        speech, label = _read_tfrecord(record)
+        yield speech, label
 
 
 @dataclass
 class LibriSpeechDataLoaderArgs:
     data_dir: str = "../data/LibriSpeech/data"
     batch_size: int = 16
+    buffer_size: int = 10000
 
     audio_maxlen: int = 400000
     audio_pad_id: int = 0
@@ -23,9 +49,12 @@ class LibriSpeechDataLoaderArgs:
 
 
 class LibriSpeechDataLoader:
-    def __init__(self, args: LibriSpeechDataLoaderArgs):
+    def __init__(self, args: LibriSpeechDataLoaderArgs, required_sample_rate: int = 16000):
         self.data_dir = args.data_dir
         self.batch_size = args.batch_size
+        self.buffer_size = args.buffer_size
+
+        self.required_sample_rate = required_sample_rate
 
         self.audio_pad_id = float(args.audio_pad_id)
         self.labels_pad_id = args.labels_pad_id
@@ -36,24 +65,50 @@ class LibriSpeechDataLoader:
         self.processor = Wav2Vec2Processor(is_tokenizer=False)
         self.tokenizer = Wav2Vec2Processor(is_tokenizer=True)
 
-    def __call__(self, seed=None) -> tf.data.Dataset:
+        self._num_samples = None
 
-        dataset = self._build_and_fetch_dataset()
+    def __call__(
+        self, from_tfrecords=False, seed=None, drop_remainder=True
+    ) -> tf.data.Dataset:
+
+        if not from_tfrecords:
+            dataset = self.build_and_fetch_dataset()
+        else:
+            files = os.listdir(self.data_dir)
+            files = [os.path.abspath(os.path.join(self.data_dir, f)) for f in files if f.endswith(".tfrecord")]
+            assert len(files) > 0, f"Unable to find `.tfrecord` in `{self.data_dir}``"
+            print("Available files:\n", files)
+
+            records_generator = partial(tfrecords_generator, files=files)
+            output_signature = (
+                tf.TensorSpec(shape=(None), dtype=tf.float32),
+                tf.TensorSpec(shape=(None), dtype=tf.int32),
+            )
+            dataset = tf.data.Dataset.from_generator(records_generator, output_signature=output_signature)
 
         # shuffling for training
         if seed is not None:
-            dataset.shuffle(self.batch_size * 10, seed=seed)
+            dataset.shuffle(self.buffer_size, seed=seed)
 
         padded_shapes = (self.audio_maxlen, self.labels_maxlen)
         padding_values = (self.audio_pad_id, self.labels_pad_id)
 
+        dataset = dataset.map(self.restrict_to_maxlen)
         dataset = dataset.padded_batch(
-            self.batch_size, padded_shapes=padded_shapes, padding_values=padding_values
+            self.batch_size,
+            padded_shapes=padded_shapes,
+            padding_values=padding_values,
+            drop_remainder=drop_remainder,
         )
 
         return dataset.prefetch(AUTOTUNE)
 
-    def _build_and_fetch_dataset(self):
+    def restrict_to_maxlen(self, speech, labels):
+        """This must be called before doing padding"""
+        speech, labels = speech[: self.audio_maxlen], labels[: self.labels_maxlen]
+        return speech, labels
+
+    def build_and_fetch_dataset(self):
 
         # fetch audio file names
         file_paths = []
@@ -62,11 +117,11 @@ class LibriSpeechDataLoader:
         file_names = [os.path.basename(path)[:-end] for path in file_paths]
 
         # reading .txt file
-        samples = self._fetch_librispeeh_txt()
+        texts = self._fetch_librispeeh_txt()
 
         # combine text & file-paths
         text_by_filepath = [
-            (file_path, samples.pop(file_name, None))
+            (file_path, texts.pop(file_name, None))
             for file_path, file_name in zip(file_paths, file_names)
         ]
         num_contaminated_samples = len(text_by_filepath)
@@ -77,45 +132,41 @@ class LibriSpeechDataLoader:
 
         print(f"LOADED {len(text_by_filepath)} FILES FROM {self.data_dir}")
 
-        # we can't apply tokenizer to tf.string. Hence applying it now.
-        labels_by_filepath = [
-            (file_path, self._prepare_label(text))
-            for file_path, text in text_by_filepath
-        ]
+        self._num_samples = len(text_by_filepath)
 
-        file_paths, labels = list(zip(*labels_by_filepath))
-
-        label_dataset = tf.data.Dataset.from_tensor_slices(list(labels))
-
-        input_dataset = tf.data.Dataset.from_tensor_slices(list(file_paths))
-        input_dataset = input_dataset.map(
-            self.decode_sound, num_parallel_calls=AUTOTUNE
+        inputs_generator = partial(self._inputs_generator, text_by_filepath)
+        output_signature = (
+            tf.TensorSpec(shape=(None), dtype=tf.float32),
+            tf.TensorSpec(shape=(None), dtype=tf.int32),
         )
-        input_dataset = input_dataset.map(self.processor, num_parallel_calls=AUTOTUNE)
-
-        dataset = tf.data.Dataset.zip((input_dataset, label_dataset))
+        dataset = tf.data.Dataset.from_generator(
+            inputs_generator, output_signature=output_signature
+        )
         return dataset
 
-    def decode_sound(self, file_path):
-        audio = tf.io.read_file(file_path)
-        audio = tfio.audio.decode_flac(audio, dtype=tf.int16)
-        audio = tf.cast(audio, tf.float32)
-        return tf.squeeze(audio)[: self.audio_maxlen]
+    def __len__(self):
+        if self._num_samples is None:
+            raise NotImplementedError
+        return self._num_samples
 
-    def _prepare_label(self, string):
-        def _pad(sample: list):
-            while len(sample) < max_length:
-                sample.append(pad_id)
-            return sample
+    def read_sound(self, file_path):
+        with open(file_path, "rb") as f:
+            audio, sample_rate = sf.read(f)
+        if sample_rate != self.required_sample_rate:
+            raise ValueError(f"sample rate (={sample_rate}) of your files must be {self.required_sample_rate}")
+        audio = tf.constant(audio, dtype=tf.float32)
+        return tf.transpose(audio)
 
-        max_length = self.labels_maxlen
-        pad_id = self.labels_pad_id
-        label = _pad(self.tokenizer(string))
-        return label[:max_length]
+    def _inputs_generator(self, text_by_filepath: List[Tuple[str, str]]):
+        for file_path, text in text_by_filepath:
+            speech = self.read_sound(file_path)
+            speech = self.processor(speech)
+            label = tf.constant(self.tokenizer(text), dtype=tf.int32)
+            yield speech, label
 
     def _fetch_librispeeh_txt(self) -> dict:
         """
-        Read data from all the `.txt` files and returns dictionary mapping `file_id` & `text`
+        Read data from all the `.txt` files and returns dictionary mapping `file_id` & `text`.
 
         Eg:
             103201 Wav2Vec2 is SOTA model
@@ -142,7 +193,7 @@ class LibriSpeechDataLoader:
         return all_samples
 
     def _fetch_and_push_files(self, data_dir, file_paths: list, file_pattern: str):
-        """All files will be recursively collected from the `data_dir`"""
+        """All files will be recursively collected from the `data_dir`."""
         listdir = os.listdir(data_dir)
         for f in listdir:
             f = os.path.join(data_dir, f)
@@ -159,19 +210,17 @@ if __name__ == "__main__":
     """Testing Area"""
     tokenizer = Wav2Vec2Processor(is_tokenizer=True)
 
-    tr_data_args = LibriSpeechDataLoaderArgs(data_dir="../data/librispeech/test-clean")
-    tr_dataloader = LibriSpeechDataLoader(tr_data_args)
-    tr_dataset = tr_dataloader(seed=0)
+    data_args = LibriSpeechDataLoaderArgs(data_dir="../data/LibriSpeech/test-clean")
+    dataloader = LibriSpeechDataLoader(data_args)
+    dataset = dataloader(seed=2)
 
-    for batch in tr_dataset:
-        print("BATCH SHAPE", batch[0].shape, batch[1])
+    for batch in dataset.take(32):
+        print("BATCH SHAPE", batch[0].shape)
         print("BATCH", tokenizer.decode(batch[1][0].numpy().tolist()))
-        break
 
-    val_data_args = LibriSpeechDataLoaderArgs(data_dir="../data/librispeech/test-clean")
-    val_dataloader = LibriSpeechDataLoader(val_data_args)
-    val_dataset = val_dataloader()
+    data_args = LibriSpeechDataLoaderArgs(data_dir="../data/LibriSpeech/test-clean")
+    dataloader = LibriSpeechDataLoader(data_args)
+    dataset = dataloader(seed=None, from_tfrecords=True)
 
-    for batch in val_dataset:
-        print("BATCH SHAPE", batch[0].shape, batch[1])
-        break
+    for batch in dataset.take(32):
+        print("BATCH SHAPE", batch[0].shape)

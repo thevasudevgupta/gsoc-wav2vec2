@@ -21,6 +21,7 @@ if is_transformers_available():
 
 MODEL_ID = "vasudevgupta/tf-wav2vec2-base-960h"
 HF_MODEL_ID = "facebook/wav2vec2-base-960h"
+HF_MODEL_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base"]
 SEED = 0
 
 
@@ -45,10 +46,9 @@ class Wav2Vec2Tester(unittest.TestCase):
         def tf_forward(*args, **kwargs):
             return tf_model(*args, **kwargs)
 
-        batch, hf_batch, tf_labels, hf_labels = self._get_batches()
+        batch, hf_batch, _, _ = self._get_batches()
 
         tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
-        loss_fn = CTCLoss(tf_model.config, batch.shape)
         hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
 
         if test_graph_mode:
@@ -56,22 +56,15 @@ class Wav2Vec2Tester(unittest.TestCase):
         else:
             tf_out = tf_model(batch, training=False)
         with torch.no_grad():
-            hf_out = hf_model(hf_batch, labels=hf_labels)
+            hf_out = hf_model(hf_batch)
 
         tf_logits = tf_out.numpy()
         hf_logits = hf_out["logits"].numpy()
-
-        hf_loss = hf_out["loss"].numpy()
-        tf_loss = loss_fn(tf_out, tf_labels).numpy()
 
         assert tf_logits.shape == hf_logits.shape, "Oops, logits shape is not matching"
         assert np.allclose(
             hf_logits, tf_logits, atol=0.004
         ), f"difference: {np.max(hf_logits - tf_logits)}"
-
-        assert np.allclose(
-            tf_loss, hf_loss, atol=1e-3
-        ), f"difference: {np.max(tf_loss - hf_loss)}"
 
     def test_inference(self):
         self._test_inference(test_graph_mode=False)
@@ -143,20 +136,29 @@ class Wav2Vec2Tester(unittest.TestCase):
         hf_pred = hf_tokenizer.batch_decode(hf_out)
         assert tf_pred == hf_pred, f"{tf_pred} VS {hf_pred}"
 
+    @partial(requires_lib, lib=["transformers", "torch"])
     def test_conversion_script(self):
-        config = Wav2Vec2Config()
-        tf_model = get_tf_pretrained_model(config, HF_MODEL_ID, verbose=False)
-        tf_model(tf.ones((1, 1024), dtype=tf.float32))
+        for hf_model_id in HF_MODEL_IDS:
+            config = Wav2Vec2Config()
+            tf_model, hf_model = get_tf_pretrained_model(config, hf_model_id, verbose=False)
+            batch, hf_batch, _, _ = self._get_batches()
+            tf_logits = tf_model(batch).numpy()
+            with torch.no_grad():
+                hf_logits = hf_model(hf_batch, return_dict=False)
+                hf_logits = hf_logits[0].numpy()
+            assert np.allclose(
+                hf_logits, tf_logits, atol=0.004
+            ), f"difference: {np.max(hf_logits - tf_logits)}"
 
     @partial(requires_lib, lib=["torch", "transformers"])
     def test_loss_autograph(self):
         """
-        This is very important test and shows how model forward pass should be written
+        This is very important test and shows how model forward pass should be written.
 
         Note:
-            1. `Wav2Vec2ForCTC.call()` & `CTCLoss.__call__` both works in eager mode
-            2. In graph mode, `Wav2Vec2ForCTC.call()` doesn't work with `jit_compile=False` while it works when `jit_compile=True`
-            3. In graph mode, `CTCLoss.__call__` doesn't work with `jit_compile=True` while it works when `jit_compile=False`
+            1. `Wav2Vec2ForCTC.call()` & `CTCLoss.__call__` both works in eager mode.
+            2. In graph mode, `Wav2Vec2ForCTC.call()` doesn't work with `jit_compile=False` while it works when `jit_compile=True`.
+            3. In graph mode, `CTCLoss.__call__` doesn't work with `jit_compile=True` while it works when `jit_compile=False`.
         """
 
         @tf.function

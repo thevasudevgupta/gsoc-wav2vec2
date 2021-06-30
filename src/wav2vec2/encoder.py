@@ -235,10 +235,8 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
             # layer_drop from [paper](https://arxiv.org/abs/1909.11556)
             drop_prob = np.random.uniform(0, 1)
             if training and (drop_prob < self.layer_drop):
-                # not using the returned value
-                _ = layer(batch, training=training)
-            else:
-                batch = layer(batch, training=training)
+                continue
+            batch = layer(batch, training=training)
         return batch
 
     def get_config(self):

@@ -10,7 +10,10 @@ def tf_multinomial_no_replacement(distribution, num_samples):
     Categorical sampling without replacement is currently not implemented. The gumbel-max trick will do for now - see
     https://github.com/tensorflow/tensorflow/issues/9260 for more info
     """
-    z = -1 * tf.math.log(tf.random.uniform(distribution.shape, 0, 1))
+    # tf.random generators not working on XLA devices
+    random_numbers = np.random.uniform(0, 1, distribution.shape)
+    random_numbers = tf.constant(random_numbers, dtype=distribution.dtype)
+    z = -1 * tf.math.log(random_numbers)
     _, indices = tf.nn.top_k(distribution + z, num_samples)
     return indices
 

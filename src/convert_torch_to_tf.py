@@ -17,7 +17,7 @@ MAPPING = (
 # fill-in PyTorch keys to ignore below
 KEYS_TO_IGNORE = []
 
-HF_IDS_WITH_HEADS = ["facebook/wav2vec2-base-960h"]
+HF_IDS_WITH_HEADS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base"]
 
 PREFIX_WITH_HEAD = "wav2vec2-ctc/"
 SPECIAL_MAPPING_WITH_HEAD = {
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     hf_model_id = "facebook/wav2vec2-base"
 
     config = Wav2Vec2Config()
-    tf_model, _ = get_tf_pretrained_model(config, hf_model_id, verbose=False)
+    tf_model, _ = get_tf_pretrained_model(config, hf_model_id, verbose=True)
 
     model_id = "tf-" + hf_model_id.split("/")[-1]
     tf_model.save_pretrained(model_id)

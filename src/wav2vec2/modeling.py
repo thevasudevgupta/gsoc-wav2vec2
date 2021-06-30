@@ -35,7 +35,7 @@ class TFKerasModel(tf.keras.Model):
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
     @classmethod
-    def from_pretrained(cls, model_id, **config_kwargs) -> tf.keras.Model:
+    def from_pretrained(cls, model_id, jit_compile=None, **config_kwargs) -> tf.keras.Model:
         """
         This will load model weights from the dictionary specified or download it from HuggingFace Hub
         if weights are not available locally.
@@ -74,7 +74,10 @@ class TFKerasModel(tf.keras.Model):
         input_shape = config_kwargs.pop("input_shape", (1, 2048))
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
         config = replace(config, **config_kwargs)
-        model = cls(config, input_shape=input_shape)
+        if isinstance(cls, Wav2Vec2ForCTC):
+            model = cls(config, jit_compile=jit_compile, input_shape=input_shape)
+        else:
+            model = cls(config, input_shape=input_shape)
         model.load_weights(os.path.join(save_dir, "tf_model.h5"))
         print("Total number of loaded variables:", len(model.variables))
         return model
@@ -220,6 +223,11 @@ class Wav2Vec2ForCTC(TFKerasModel):
 
 
 class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
+    def __init__(self, *args, jit_compile=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tr_fwd = tf.function(self._tr_fwd, jit_compile=jit_compile)
+        self.eval_fwd = tf.function(self._eval_fwd, jit_compile=jit_compile)
+
     def compile(self, optimizer, steps_per_execution, loss_fn):
         super().compile(optimizer=optimizer, steps_per_execution=steps_per_execution)
         self.loss_fn = loss_fn
@@ -243,12 +251,8 @@ class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
         speech, labels = data
 
         with tf.GradientTape() as gtape:
-            logits = self.forward(speech, training=True)
-
-            print("LOGIT_SHAPE", logits.shape)
-            print("LABELS_SHAPE", labels.shape)
+            logits = self.tr_fwd(speech)
             loss = self.loss_fn(logits, labels)
-            print("LOSS_SHAPE", loss.shape)
 
         gradients = gtape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
@@ -258,13 +262,16 @@ class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
 
     def test_step(self, data):
         speech, labels = data
-        logits = self.forward(speech, training=False)
+        logits = self.eval_fwd(speech)
         loss = self.loss_fn(logits, labels)
 
         self.val_loss_tracker.update_state(loss)
         return {"val_loss": self.val_loss_tracker.result()}
 
-    @tf.function(jit_compile=True)
-    def forward(self, *args, **kwargs):
+    def _tr_fwd(self, speech):
         """In graph mode, forward pass only works with jit-compile."""
-        return self(*args, **kwargs)
+        return self(speech, training=True)
+
+    def _eval_fwd(self, speech):
+        """In graph mode, forward pass only works with jit-compile."""
+        return self(speech, training=False)

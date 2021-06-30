@@ -4,8 +4,8 @@ from typeguard import typechecked
 
 class Conv1DWithWeightNorm(tf.keras.layers.Conv1D):
     """
-    tensorflow_addons.layers.WeightNormalization, torch.nn.WeightNorm gives different results
-    So it's better to implement it for our use case.
+    Adapted from `tensorflow_addons.layers.WeightNormalization`
+    torch.nn.WeightNorm works slightly different. So, it's better to implement it
     """
 
     def __init__(self, *args, **kwargs):
@@ -21,27 +21,27 @@ class Conv1DWithWeightNorm(tf.keras.layers.Conv1D):
         )
 
     def build(self, input_shape):
-        if not self.built:
-            super().build(input_shape)
-            kernel_norm_axes = list(range(self.kernel.shape.rank))
-            kernel_norm_axes.pop(self.filter_axis)
-            # Convert `kernel_norm_axes` from a list to a constant Tensor to allow
-            # TF checkpoint saving.
-            self.kernel_norm_axes = tf.constant(kernel_norm_axes)
-            self.kernel = tf.Variable(self.kernel, name="weight_v", trainable=True)
-            self.weight_v = self.kernel
+        super().build(input_shape)
 
-            self.weight_g = self.add_weight(
-                name="weight_g",
-                shape=(int(self.weight_v.shape[self.filter_axis]), 1, 1),
-                initializer="ones",
-                dtype=self.weight_v.dtype,
-                trainable=True,
-            )
-            self._init_weight_g()
+        kernel_norm_axes = list(range(self.kernel.shape.rank))
+        kernel_norm_axes.pop(self.filter_axis)
+        self.kernel_norm_axes = kernel_norm_axes
+
+        # renaming kernal variable for making similar to torch-weight-norm
+        self.kernel = tf.Variable(self.kernel, name="weight_v", trainable=True)
+        self.weight_v = self.kernel
+
+        self._init_weight_g()
 
     def _init_weight_g(self):
         """Set the norm of the weight vector."""
+        self.weight_g = self.add_weight(
+            name="weight_g",
+            shape=(int(self.weight_v.shape[self.filter_axis]), 1, 1),
+            initializer="ones",
+            dtype=self.weight_v.dtype,
+            trainable=True,
+        )
         kernel_norm = tf.sqrt(
             tf.reduce_sum(tf.square(self.weight_v), axis=self.kernel_norm_axes)
         )

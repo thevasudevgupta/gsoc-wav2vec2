@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import tensorflow as tf
 
@@ -9,7 +10,7 @@ from data_utils import (
     LibriSpeechDataLoaderArgs,
 )
 from tqdm.auto import tqdm
-import os
+
 
 def create_tfrecord(speech_tensor, label_tensor):
     speech_tensor = tf.cast(speech_tensor, SPEECH_DTYPE)
@@ -56,20 +57,29 @@ if __name__ == "__main__":
         if i == args.num_shards - 1:
             num_records_to_take += len(dataloader) % args.num_shards
         with tf.io.TFRecordWriter(file_name) as writer:
-            iterable_dataset = dataset.skip(num_records_to_skip * i).take(num_records_to_take)
-            for speech, label in tqdm(iterable_dataset, total=num_records_to_take, desc=f"Preparing {file_name} ... "):
+            iterable_dataset = dataset.skip(num_records_to_skip * i).take(
+                num_records_to_take
+            )
+            for speech, label in tqdm(
+                iterable_dataset,
+                total=num_records_to_take,
+                desc=f"Preparing {file_name} ... ",
+            ):
                 speech, label = tf.squeeze(speech), tf.squeeze(label)
-                speech_stats.append(len(speech)); label_stats.append(len(label))
+                speech_stats.append(len(speech))
+                label_stats.append(len(label))
                 tf_record = create_tfrecord(speech, label)
                 writer.write(tf_record)
     print(f"Total {len(dataloader)} tfrecords are sharded in `{args.tfrecord_dir}`")
     print("############# Data Stats #############")
-    print({
-        "speech_min": min(speech_stats),
-        "speech_mean": sum(speech_stats)/len(speech_stats),
-        "speech_max": max(speech_stats),
-        "label_min": min(label_stats),
-        "label_mean": sum(label_stats)/len(label_stats),
-        "label_max": max(label_stats),
-    })
+    print(
+        {
+            "speech_min": min(speech_stats),
+            "speech_mean": sum(speech_stats) / len(speech_stats),
+            "speech_max": max(speech_stats),
+            "label_min": min(label_stats),
+            "label_mean": sum(label_stats) / len(label_stats),
+            "label_max": max(label_stats),
+        }
+    )
     print("######################################")

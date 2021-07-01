@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 from itertools import groupby
 
@@ -58,7 +59,6 @@ class Wav2Vec2Processor:
                 Tensor which needs to be fed into `model.call()`
         """
         if self.is_tokenizer:
-            input_values = input_values.upper()
             input_values = self._tokenize(input_values)
             input_values = [
                 self.token_to_id_mapping.get(k, self.unk_id) for k in input_values
@@ -89,6 +89,8 @@ class Wav2Vec2Processor:
         return "".join(tokens).strip()
 
     def _tokenize(self, string: str):
+        string = re.sub("-", " ", string)
+        string = re.sub("[^A-Z' ]", "", string.upper())
         return list(string.replace(" ", self.dimiliter_token))
 
     def get_vocab(self):
@@ -119,6 +121,11 @@ if __name__ == "__main__":
 
     tokenizer = Wav2Vec2Processor(is_tokenizer=True)
     ids = tokenizer("vasudev guptaa is a data scientist.")
+    print(ids)
+    print(tokenizer.decode(ids))
+    print(tokenizer.decode(ids, group_tokens=False))
+
+    ids = tokenizer("how is life gooing? what's up.. yayy i got results. it's awe-some")
     print(ids)
     print(tokenizer.decode(ids))
     print(tokenizer.decode(ids, group_tokens=False))

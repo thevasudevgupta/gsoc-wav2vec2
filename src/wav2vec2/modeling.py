@@ -35,7 +35,9 @@ class TFKerasModel(tf.keras.Model):
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
     @classmethod
-    def from_pretrained(cls, model_id, jit_compile=None, **config_kwargs) -> tf.keras.Model:
+    def from_pretrained(
+        cls, model_id, jit_compile=None, **config_kwargs
+    ) -> tf.keras.Model:
         """
         This will load model weights from the dictionary specified or download it from HuggingFace Hub
         if weights are not available locally.
@@ -132,7 +134,7 @@ class Wav2Vec2Model(TFKerasModel):
             config.intermediate_size,
             config.num_conv_pos_embeddings,
             config.num_conv_pos_embedding_groups,
-            layer_drop=config.layer_drop,
+            survival_prob=config.survival_prob,
             dropout=config.dropout,
             layer_norm_eps=config.layer_norm_eps,
             is_gelu_approx=config.is_gelu_approx,

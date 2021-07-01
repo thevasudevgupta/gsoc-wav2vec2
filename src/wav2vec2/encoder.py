@@ -1,8 +1,6 @@
 import tensorflow as tf
 
-import numpy as np
-
-from .tensorflow_addons import Conv1DWithWeightNorm
+from .tensorflow_addons import Conv1DWithWeightNorm, StochasticDepth
 
 
 class TransformerAttention(tf.keras.layers.Layer):
@@ -70,6 +68,7 @@ class TransformerLayer(tf.keras.layers.Layer):
         hidden_size,
         num_heads,
         intermediate_size,
+        survival_prob=0.9,
         layer_norm_eps=1e-5,
         is_gelu_approx=False,
         dropout=0.1,
@@ -79,6 +78,7 @@ class TransformerLayer(tf.keras.layers.Layer):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.intermediate_size = intermediate_size
+        self.survival_prob = survival_prob
         self.layer_norm_eps = layer_norm_eps
         self.is_gelu_approx = is_gelu_approx
         self.dropout = dropout
@@ -101,6 +101,7 @@ class TransformerLayer(tf.keras.layers.Layer):
             epsilon=layer_norm_eps,
             name="final_layer_norm",
         )
+        self.stochastic_depth = StochasticDepth(survival_prob)
 
     def call(self, batch, training=False):
 
@@ -113,9 +114,10 @@ class TransformerLayer(tf.keras.layers.Layer):
         # ffn
         residual = batch
         batch = tf.nn.gelu(self.intermediate(batch), approximate=self.is_gelu_approx)
-        batch = self.dropout(batch, training=training)
-        batch = self.dropout(self.attn_output(batch), training=training)
-        batch = self.final_layer_norm(batch + residual)
+        batch = self.attn_output(self.dropout(batch, training=training))
+        # stochastic depth from `paper <https://arxiv.org/abs/1603.09382> __`
+        batch = self.stochastic_depth([residual, batch], training=training)
+        batch = self.final_layer_norm(batch)
 
         return batch
 
@@ -126,6 +128,7 @@ class TransformerLayer(tf.keras.layers.Layer):
                 "hidden_size": self.hidden_size,
                 "num_heads": self.num_heads,
                 "intermediate_size": self.intermediate_size,
+                "survival_prob": self.survival_prob,
                 "layer_norm_eps": self.layer_norm_eps,
                 "is_gelu_approx": self.is_gelu_approx,
                 "dropout": self.dropout,
@@ -186,7 +189,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         intermediate_size,
         num_conv_pos_embeddings,
         num_conv_pos_embedding_groups,
-        layer_drop=0.1,
+        survival_prob=0.9,
         dropout=0.1,
         layer_norm_eps=1e-5,
         is_gelu_approx=False,
@@ -199,7 +202,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         self.intermediate_size = intermediate_size
         self.num_conv_pos_embeddings = num_conv_pos_embeddings
         self.num_conv_pos_embedding_groups = num_conv_pos_embedding_groups
-        self.layer_drop = layer_drop
+        self.survival_prob = survival_prob
         self.dropout = dropout
         self.layer_norm_eps = layer_norm_eps
         self.is_gelu_approx = is_gelu_approx
@@ -220,6 +223,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
                 hidden_size,
                 num_heads,
                 intermediate_size,
+                survival_prob=survival_prob,
                 layer_norm_eps=layer_norm_eps,
                 is_gelu_approx=is_gelu_approx,
                 dropout=dropout,
@@ -232,10 +236,6 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         batch = batch + self.pos_conv_embed(batch)
         batch = self.dropout(self.layer_norm(batch), training=training)
         for layer in self.layers:
-            # layer_drop from [paper](https://arxiv.org/abs/1909.11556)
-            drop_prob = np.random.uniform(0, 1)
-            if training and (drop_prob < self.layer_drop):
-                continue
             batch = layer(batch, training=training)
         return batch
 
@@ -249,7 +249,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
                 "intermediate_size": self.intermediate_size,
                 "num_conv_pos_embeddings": self.num_conv_pos_embeddings,
                 "num_conv_pos_embedding_groups": self.num_conv_pos_embedding_groups,
-                "layer_drop": self.layer_drop,
+                "survival_prob": self.survival_prob,
                 "dropout": self.dropout,
                 "layer_norm_eps": self.layer_norm_eps,
                 "is_gelu_approx": self.is_gelu_approx,

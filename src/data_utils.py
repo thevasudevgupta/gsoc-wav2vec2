@@ -4,8 +4,8 @@ from functools import partial
 from typing import List, Tuple
 
 import tensorflow as tf
-import soundfile as sf
 
+import soundfile as sf
 from wav2vec2 import Wav2Vec2Processor
 
 
@@ -25,12 +25,14 @@ def read_tfrecords(record):
     label = tf.io.parse_tensor(record["label"], out_type=LABEL_DTYPE)
 
     return speech, label
-    
+
 
 @dataclass
-class LibriSpeechDataLoaderArgs:    
+class LibriSpeechDataLoaderArgs:
     from_tfrecords: bool = False
-    tfrecords: List[str] = field(default_factory=lambda: ["gs://gsoc-librispeech/test/test-clean.tfrecord"])
+    tfrecords: List[str] = field(
+        default_factory=lambda: ["gs://gsoc-librispeech/test/test-clean.tfrecord"]
+    )
     data_dir: str = "../data/LibriSpeech/test-clean"
 
     batch_size: int = 16
@@ -45,14 +47,20 @@ class LibriSpeechDataLoaderArgs:
     def __post_init__(self):
         if self.from_tfrecords:
             self.data_dir = None
-            assert self.tfrecords is not None, "You must specify `tfrecords` when `from_tfrecords=True`."
+            assert (
+                self.tfrecords is not None
+            ), "You must specify `tfrecords` when `from_tfrecords=True`."
         else:
             self.tfrecords = None
-            assert self.data_dir is not None, "You must specify `data_dir` when `from_tfrecords=False`."
+            assert (
+                self.data_dir is not None
+            ), "You must specify `data_dir` when `from_tfrecords=False`."
 
 
 class LibriSpeechDataLoader:
-    def __init__(self, args: LibriSpeechDataLoaderArgs, required_sample_rate: int = 16000):
+    def __init__(
+        self, args: LibriSpeechDataLoaderArgs, required_sample_rate: int = 16000
+    ):
         self.from_tfrecords = args.from_tfrecords
         self.tfrecords = args.tfrecords
         self.data_dir = args.data_dir
@@ -73,9 +81,7 @@ class LibriSpeechDataLoader:
 
         self._num_samples = None
 
-    def __call__(
-        self, seed=None, drop_remainder=True
-    ) -> tf.data.Dataset:
+    def __call__(self, seed=None, drop_remainder=True) -> tf.data.Dataset:
 
         if not self.from_tfrecords:
             dataset = self.build_and_fetch_dataset()
@@ -160,7 +166,9 @@ class LibriSpeechDataLoader:
         with open(file_path, "rb") as f:
             audio, sample_rate = sf.read(f)
         if sample_rate != self.required_sample_rate:
-            raise ValueError(f"sample rate (={sample_rate}) of your files must be {self.required_sample_rate}")
+            raise ValueError(
+                f"sample rate (={sample_rate}) of your files must be {self.required_sample_rate}"
+            )
         audio = tf.constant(audio, dtype=SPEECH_DTYPE)
         return tf.transpose(audio)
 
@@ -217,7 +225,9 @@ if __name__ == "__main__":
     """Testing Area"""
     tokenizer = Wav2Vec2Processor(is_tokenizer=True)
 
-    data_args = LibriSpeechDataLoaderArgs(from_tfrecords=True, tfrecords=["../data/test/test-clean.tfrecord"])
+    data_args = LibriSpeechDataLoaderArgs(
+        from_tfrecords=True, tfrecords=["../data/test/test-clean.tfrecord"]
+    )
     dataloader = LibriSpeechDataLoader(data_args)
     dataset = dataloader(seed=None)
 

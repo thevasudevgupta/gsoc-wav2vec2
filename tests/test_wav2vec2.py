@@ -140,7 +140,9 @@ class Wav2Vec2Tester(unittest.TestCase):
     def test_conversion_script(self):
         for hf_model_id in HF_MODEL_IDS:
             config = Wav2Vec2Config()
-            tf_model, hf_model = get_tf_pretrained_model(config, hf_model_id, verbose=False)
+            tf_model, hf_model = get_tf_pretrained_model(
+                config, hf_model_id, verbose=False
+            )
             batch, hf_batch, _, _ = self._get_batches()
             tf_logits = tf_model(batch).numpy()
             with torch.no_grad():

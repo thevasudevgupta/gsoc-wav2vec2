@@ -13,6 +13,7 @@ dummy/
 timit/
 LibriSpeech/
 
+checkpoints/
 vasudevgupta/
 wav2vec2-base-960h/
 wandb

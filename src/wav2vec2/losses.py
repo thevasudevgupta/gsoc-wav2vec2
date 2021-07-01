@@ -2,13 +2,13 @@ import tensorflow as tf
 
 
 class CTCLoss:
-    def __init__(self, config, input_shape, division_factor=1):
+    def __init__(self, config, model_input_shape, division_factor=1):
         self.kernal_sizes = config.kernal_sizes
         self.strides = config.strides
         self.pad_id = config.pad_id
         self.division_factor = division_factor
 
-        self.model_input_shape = input_shape
+        self.model_input_shape = model_input_shape
 
     def __call__(self, hidden_states, labels):
         """

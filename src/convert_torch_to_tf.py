@@ -83,7 +83,11 @@ def get_tf_pretrained_model(
             continue
 
         if k in SPECIAL_MAPPING_WITH_HEAD or k in SPECIAL_MAPPING_WITHOUT_HEAD:
-            new_k = SPECIAL_MAPPING_WITH_HEAD[k] if with_head else SPECIAL_MAPPING_WITHOUT_HEAD[k]
+            new_k = (
+                SPECIAL_MAPPING_WITH_HEAD[k]
+                if with_head
+                else SPECIAL_MAPPING_WITHOUT_HEAD[k]
+            )
         else:
             new_k = replace(k, prefix=prefix)
 

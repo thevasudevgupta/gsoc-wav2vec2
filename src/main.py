@@ -197,11 +197,8 @@ def main(args):
         )
 
         optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
-        model.compile(
-            optimizer=optimizer,
-            steps_per_execution=None,
-            loss_fn=loss_fn,
-        )
+        model.compile(optimizer, loss_fn)
+
     model.summary()
     print("######### Initiating training #########")
     model.fit(

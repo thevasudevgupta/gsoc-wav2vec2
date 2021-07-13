@@ -230,16 +230,15 @@ class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
         self.tr_fwd = tf.function(self._tr_fwd, jit_compile=jit_compile)
         self.eval_fwd = tf.function(self._eval_fwd, jit_compile=jit_compile)
 
-    def compile(self, optimizer, steps_per_execution, loss_fn):
-        super().compile(optimizer=optimizer, steps_per_execution=steps_per_execution)
+    def compile(self, optimizer, loss_fn):
+        super().compile(optimizer=optimizer)
         self.loss_fn = loss_fn
-        self.tr_loss_tracker = tf.keras.metrics.Mean(name="tr_loss")
-        self.val_loss_tracker = tf.keras.metrics.Mean(name="val_loss")
+        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
 
     @property
     def metrics(self):
         """TFKeras will call `metric.reset_states()` because of this method."""
-        return [self.tr_loss_tracker, self.val_loss_tracker]
+        return [self.loss_tracker]
 
     def train_step(self, data):
         """
@@ -254,21 +253,21 @@ class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
 
         with tf.GradientTape() as gtape:
             logits = self.tr_fwd(speech)
-            loss = self.loss_fn(logits, labels)
+            loss = self.loss_fn(labels, logits)
 
         gradients = gtape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.tr_loss_tracker.update_state(loss)
-        return {"tr_loss": self.tr_loss_tracker.result()}
+        self.loss_tracker.update_state(loss)
+        return {m.name: m.result() for m in self.metrics}
 
     def test_step(self, data):
         speech, labels = data
         logits = self.eval_fwd(speech)
-        loss = self.loss_fn(logits, labels)
+        loss = self.loss_fn(labels, logits)
 
-        self.val_loss_tracker.update_state(loss)
-        return {"val_loss": self.val_loss_tracker.result()}
+        self.loss_tracker.update_state(loss)
+        return {m.name: m.result() for m in self.metrics}
 
     def _tr_fwd(self, speech):
         """In graph mode, forward pass only works with jit-compile."""

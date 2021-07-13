@@ -11,7 +11,7 @@ LOGGING_STEPS = int(os.getenv("LOGGING_STEPS", "1"))
 class LoggingCallback(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs):
         if batch % LOGGING_STEPS == 0:
-            wandb.log(logs, commit=True)
+            wandb.log({**logs, "lr": self.model.optimizer.learning_rate}, commit=True)
 
     def on_test_end(self, logs):
         wandb.log(logs, commit=False)

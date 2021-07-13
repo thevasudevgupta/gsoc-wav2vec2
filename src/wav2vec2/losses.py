@@ -1,8 +1,9 @@
 import tensorflow as tf
 
 
-class CTCLoss:
+class CTCLoss(tf.keras.losses.Loss):
     def __init__(self, config, model_input_shape, division_factor=1):
+        super().__init__(reduction=tf.keras.losses.Reduction.SUM)
         self.kernal_sizes = config.kernal_sizes
         self.strides = config.strides
         self.pad_id = config.pad_id
@@ -10,15 +11,15 @@ class CTCLoss:
 
         self.model_input_shape = model_input_shape
 
-    def __call__(self, hidden_states, labels):
+    def call(self, labels, hidden_states):
         """
         This methods wraps up `tf.nn.ctc_loss` and returns the ctc-loss for batch.
 
         Args:
-            hidden_states (:obj: `tf.Tensor`):
-                This is the output of LM head of `Wav2Vec2ForCTC.call(...)`.
             labels (:obj: `tf.Tensor`):
                 This is batch of tokenized text labels.
+            hidden_states (:obj: `tf.Tensor`):
+                This is the output of LM head of `Wav2Vec2ForCTC.call(...)`.
 
         Returns:
             loss (:obj: `tf.Tensor`):
@@ -41,7 +42,6 @@ class CTCLoss:
             name="ctc-loss",
         )
 
-        loss = tf.reduce_sum(loss)
         return loss / self.division_factor
 
     def _get_logit_length(self, input_length):

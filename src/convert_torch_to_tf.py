@@ -1,5 +1,6 @@
 import tensorflow as tf
 import transformers
+from typing import Union
 
 import numpy as np
 from tqdm.auto import tqdm
@@ -17,7 +18,7 @@ MAPPING = (
 # fill-in PyTorch keys to ignore below
 KEYS_TO_IGNORE = []
 
-HF_IDS_WITH_HEADS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base"]
+ACCEPTABLE_HF_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base"]
 
 PREFIX_WITH_HEAD = "wav2vec2-ctc/"
 SPECIAL_MAPPING_WITH_HEAD = {
@@ -42,8 +43,8 @@ def replace(k: str, prefix) -> str:
 
 
 def get_tf_pretrained_model(
-    config: Wav2Vec2Config, hf_model_id: str, verbose=False
-) -> Wav2Vec2ForCTC:
+    config: Wav2Vec2Config, hf_model_id: str, verbose=False, with_lm_head=True,
+) -> Union[Wav2Vec2ForCTC, Wav2Vec2Model]:
     """
     Converts HF PyTorch weights to TensorFlow compatible weights.
 
@@ -52,14 +53,15 @@ def get_tf_pretrained_model(
             Configuration of TF model.
         hf_model_id (:obj: `str`):
             model_id of HuggingFace PyTorch model.
+        with_lm_head (:obj: `bool`, default=True):
+            Whether to return Wav2Vec2ForCTC or Wav2Vec2Model
 
     Returns:
         Instance of `Wav2Vec2ForCTC` loaded with pre-trained weights.
     """
+    assert hf_model_id in ACCEPTABLE_HF_IDS, f"{hf_model_id} is not acceptable"
 
-    with_head = True if hf_model_id in HF_IDS_WITH_HEADS else False
-
-    if with_head:
+    if with_lm_head:
         tf_model = Wav2Vec2ForCTC(config)
         prefix = PREFIX_WITH_HEAD
         hf_model = transformers.Wav2Vec2ForCTC.from_pretrained(hf_model_id)
@@ -85,7 +87,7 @@ def get_tf_pretrained_model(
         if k in SPECIAL_MAPPING_WITH_HEAD or k in SPECIAL_MAPPING_WITHOUT_HEAD:
             new_k = (
                 SPECIAL_MAPPING_WITH_HEAD[k]
-                if with_head
+                if with_lm_head
                 else SPECIAL_MAPPING_WITHOUT_HEAD[k]
             )
         else:
@@ -123,7 +125,7 @@ if __name__ == "__main__":
     hf_model_id = "facebook/wav2vec2-base"
 
     config = Wav2Vec2Config()
-    tf_model, _ = get_tf_pretrained_model(config, hf_model_id, verbose=True)
+    tf_model, _ = get_tf_pretrained_model(config, hf_model_id, verbose=True, with_lm_head=True)
 
     model_id = "tf-" + hf_model_id.split("/")[-1]
     tf_model.save_pretrained(model_id)

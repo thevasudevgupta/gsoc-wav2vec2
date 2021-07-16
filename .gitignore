@@ -18,5 +18,6 @@ vasudevgupta/
 wav2vec2-base-960h/
 wandb
 tf-wav2vec2-base-960h/
+saved-model/
 
 debugger.ipynb

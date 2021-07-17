@@ -4,3 +4,4 @@ huggingface-hub
 soundfile
 jiwer
 typeguard
+tensorflow_hub

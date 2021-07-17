@@ -163,10 +163,14 @@ class Wav2Vec2Tester(unittest.TestCase):
             3. In graph mode, `CTCLoss.__call__` doesn't work with `jit_compile=True` while it works when `jit_compile=False`.
         """
 
+        @tf.function(jit_compile=True)
+        def tf_forward(batch):
+            return tf_model(batch, training=False)
+
         @tf.function
-        def tf_forward(batch, labels):
-            batch = tf.function(tf_model, jit_compile=True)(batch, training=False)
-            loss = tf.function(loss_fn)(batch, labels)
+        def compute_loss(batch, labels):
+            batch = tf_forward(batch)
+            loss = loss_fn(labels, batch)
             return loss, batch
 
         batch, hf_batch, tf_labels, hf_labels = self._get_batches()
@@ -176,7 +180,7 @@ class Wav2Vec2Tester(unittest.TestCase):
 
         hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
 
-        tf_loss, tf_logits = tf_forward(batch, labels=tf_labels)
+        tf_loss, tf_logits = compute_loss(batch, labels=tf_labels)
         with torch.no_grad():
             hf_out = hf_model(hf_batch, labels=hf_labels)
 

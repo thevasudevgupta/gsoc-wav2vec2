@@ -46,7 +46,7 @@ def get_tf_pretrained_model(
     config: Wav2Vec2Config, hf_model_id: str, verbose=False, with_lm_head=True,
 ) -> Union[Wav2Vec2ForCTC, Wav2Vec2Model]:
     """
-    Converts HF PyTorch weights to TensorFlow compatible weights.
+    Converts HuggingFace PyTorch weights to TensorFlow compatible weights.
 
     Args:
         config (:obj: `Wav2Vec2Config`):

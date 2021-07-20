@@ -7,11 +7,11 @@ import argparse
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hf_model_id", default="facebook/wav2vec2-base", type=str)
-    parser.add_argument("--with_lm_head", default=False, type=bool)
-    parser.add_argument("--verbose", default=False, type=bool)
-    parser.add_argument("--saved_model_dir", default="saved-model/", type=str)
-    parser.add_argument("--seqlen", default=246000, type=int)
+    parser.add_argument("--hf_model_id", default="facebook/wav2vec2-base", type=str, help="Model ID of HuggingFace wav2vec2 which needs to be converted into TensorFlow")
+    parser.add_argument("--with_lm_head", default=False, type=bool, help="Whether to use `Wav2Vec2Model` or `Wav2Vec2ForCTC` from `wav2vec2/modeling.py`")
+    parser.add_argument("--verbose", default=False, type=bool, help="Whether to display specific layers conversion while running conversion script")
+    parser.add_argument("--saved_model_dir", default="saved-model/", type=str, help="Where to save the obtained `saved-model`")
+    parser.add_argument("--seqlen", default=246000, type=int, help="With what sequence length should model be exported")
     return parser
 
 

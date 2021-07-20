@@ -94,7 +94,7 @@ class TFKerasModel(tf.keras.Model):
 
 
 class Wav2Vec2Model(TFKerasModel):
-    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec2"):
+    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 50000), name="wav2vec2"):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
@@ -190,7 +190,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with a CTC head."""
 
     def __init__(
-        self, config: Wav2Vec2Config, input_shape=(1, 2048), name="wav2vec2-ctc"
+        self, config: Wav2Vec2Config, input_shape=(1, 50000), name="wav2vec2-ctc"
     ):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):

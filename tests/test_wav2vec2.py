@@ -141,7 +141,7 @@ class Wav2Vec2Tester(unittest.TestCase):
         for hf_model_id in HF_MODEL_IDS:
             config = Wav2Vec2Config()
             tf_model, hf_model = get_tf_pretrained_model(
-                config, hf_model_id, verbose=False
+                config, hf_model_id, verbose=False, with_lm_head=True,
             )
             batch, hf_batch, _, _ = self._get_batches()
             tf_logits = tf_model(batch).numpy()

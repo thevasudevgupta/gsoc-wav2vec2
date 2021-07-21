@@ -1,50 +1,45 @@
-# GSoC'21 @ TensorFlow
+# Wav2Vec2 (GSoC'21)
 
-This repositary hosts my work on the project with [TensorFlow](https://github.com/tensorflow/tensorflow) as a part of [GSoC'21](https://summerofcode.withgoogle.com/).
-
-| Mentors | [Jaeyoun Kim](https://github.com/jaeyounkim), [Morgan Roff](https://github.com/MorganR), [Sayak Paul](https://github.com/sayakpaul) |
-|---------|---------|
+In this repositary, I have implemented **Wav2Vec2** model (from paper: [**wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations**](https://arxiv.org/abs/2006.11477)) in **TensorFlow 2.0** as a part of [**GSoC**](https://summerofcode.withgoogle.com/) project.
 
 ## Notebooks
 
-| Description                               | Link                                      |
+| Notebook | Description |
 |-------------------------------------------|-------------------------------------------|
-| Wav2Vec2 **evaluation on LibriSpeech dataset** using original fine-tuned checkpoint | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech-evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> |
-| TensorFlow Wav2Vec2 for **Automatic Speech Recognition** | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2-inference.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> |
+| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech-evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | Wav2Vec2 **evaluation on LibriSpeech dataset** using original fine-tuned checkpoint |
+| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2-inference.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook shows a small demo of how to use Wav2Vec2 for inference on **Automatic Speech Recognition** task. |
+| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_saved_model_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates the workflow for finetuning `Wav2Vec2 saved-model` (from TensorFlow Hub) for `Speech -> Text` task. Extra head is appended over the top of pre-trained model and whole architecture is wrapped in `tf.keras.Model`. Further, data-processing pipeline is explained in-detail along with few features of `tf.data.Dataset` API. |
 
-## Using this Repositary
+## Using this Repository
 
-**Setting up**
+### Setting Up
 
 ```shell
-# install & setup tensorflow first
+# install & setup TensorFlow first
 pip3 install tensorflow
 
-# note: Cloud TPUs (version: v2-alpha) relies on special version of TensorFlow
-# so you should not install TensorFlow yourself there.
-
-# install other requirements of this project using following command:
+# install other requirements of this project using the following command:
 pip3 install -qr requirements.txt
 
 # switch to code directory for further steps
 cd src
 ```
 
-**Preparing Dataset**
+### Preparing dataset
 
 ```shell
 # It's better to convert speech, text into TFRecords format
 # and save it in GCS buckets for online streaming during training
-# In order to make tfrecords out of dataset downloaded from official link, run following:
-python3 make_tfrecords.py --data_dir=<directory-where-you-downloaded> \
--d=<target-directory-where-tfrecords-should-be-sharded> \
--n=<no-of-tfrecords-shard>
+# To make tfrecords out of the dataset downloaded from the official link, run the following:
+python3 make_tfrecords.py --data_dir <source-directory> \
+-d <target-directory> \
+-n <no-of-tfrecords-shards>
 
 # after successful completion of above command, transfer dataset into GCS bucket like this:
-gsutil cp -r <dir-which-you-want-to-copy> gs://<GCS-bucket-name>
+gsutil cp -r <target-directory> gs://<GCS-bucket-name>
 ```
 
-**Training Model**
+### Model training
 
 ```shell
 # running following command will initiate training:
@@ -56,14 +51,18 @@ python3 main.py
 ON_COLAB_TPU=true python3 main.py
 ```
 
-**Running tests**
-
-Tests ensures that any update to the code will not make the model diverge from the original implementation of `Wav2Vec2`.
+### Running tests
 
 ```shell
 # first install `torch` & `transformers`
 pip3 install torch transformers
 
-# run this from root of this repositary
+# run this from the root of this repository
 pytest -sv tests
 ```
+
+## Mentors
+
+* [Sayak Paul](https://github.com/sayakpaul)
+* [Morgan Roff](https://github.com/MorganR)
+* [Jaeyoun Kim](https://github.com/jaeyounkim)

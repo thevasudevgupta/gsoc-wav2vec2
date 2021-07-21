@@ -23,15 +23,11 @@ if __name__ == '__main__':
     config = Wav2Vec2Config(apply_spec_augment=False)
     model, _ = get_tf_pretrained_model(config, args.hf_model_id, verbose=args.verbose, with_lm_head=args.with_lm_head)
 
-    input_signature = [tf.TensorSpec((None, args.seqlen), dtype=tf.float32)]
+    input_signature = (tf.TensorSpec((None, args.seqlen), dtype=tf.float32, name="speech"),)
 
     @tf.function(input_signature=input_signature)
-    def infer_function(batch):
-        return model(batch, training=False)
+    def forward(batch, training=False):
+        return model(batch, training=training)
 
-    @tf.function(input_signature=input_signature)
-    def train_function(batch):
-        return model(batch, training=True)
-
-    signatures = {"infer": infer_function, "train": train_function}
+    signatures = {"wav2vec2": forward}
     tf.saved_model.save(model, args.saved_model_dir, signatures=signatures)

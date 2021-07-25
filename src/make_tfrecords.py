@@ -33,9 +33,9 @@ if __name__ == "__main__":
         "CLI to convert .flac dataset into .tfrecords format"
     )
     parser.add_argument(
-        "--data_dir", default="../data/librispeech/test-clean", type=str
+        "--data_dir", default="../data/LibriSpeech/dev-clean", type=str
     )
-    parser.add_argument("-d", "--tfrecord_dir", default="test-clean", type=str)
+    parser.add_argument("-d", "--tfrecord_dir", default="dev-clean", type=str)
     parser.add_argument("-n", "--num_shards", default=1, type=int)
 
     args = parser.parse_args()
@@ -45,31 +45,35 @@ if __name__ == "__main__":
     dataloader = LibriSpeechDataLoader(data_args)
     dataset = dataloader.build_and_fetch_dataset()
 
-    speech_stats, label_stats = [], []
-
     # shards the TFrecords into several files (since overall dataset size is approx 280 GB)
     # this will help TFRecordDataset to read shards in parallel from several files
     # Docs suggest to keep each shard around 100 MB in size, so choose num_shards accordingly
-    num_records_to_skip = num_records_to_take = len(dataloader) // args.num_shards
-    for i in range(args.num_shards):
-        file_name = os.path.join(args.tfrecord_dir, f"{args.tfrecord_dir}-{i}.tfrecord")
-        # last shard may have extra elements
-        if i == args.num_shards - 1:
-            num_records_to_take += len(dataloader) % args.num_shards
-        with tf.io.TFRecordWriter(file_name) as writer:
-            iterable_dataset = dataset.skip(num_records_to_skip * i).take(
-                num_records_to_take
-            )
-            for speech, label in tqdm(
-                iterable_dataset,
-                total=num_records_to_take,
-                desc=f"Preparing {file_name} ... ",
-            ):
-                speech, label = tf.squeeze(speech), tf.squeeze(label)
-                speech_stats.append(len(speech))
-                label_stats.append(len(label))
-                tf_record = create_tfrecord(speech, label)
-                writer.write(tf_record)
+    num_records_per_file = len(dataloader) // args.num_shards
+    file_names = [os.path.join(args.tfrecord_dir, f"{args.tfrecord_dir}-{i}.tfrecord") for i in range(args.num_shards)]
+    writers = [tf.io.TFRecordWriter(file_name) for file_name in file_names]
+
+    dataset = dataset.take(num_records_per_file*args.num_shards)
+
+    # following loops runs in O(n) time (assuming n = num_samples & for every tfrecord prepartion_take = O(1))
+    i, speech_stats, label_stats = 0, [], []
+    pbar = tqdm(dataset, total=len(dataloader), desc=f"Preparing {file_names[i]} ... ")
+    for j, inputs in enumerate(pbar):
+        speech, label = inputs
+        speech, label = tf.squeeze(speech), tf.squeeze(label)
+        speech_stats.append(len(speech))
+        label_stats.append(len(label))
+        tf_record = create_tfrecord(speech, label)
+
+        writers[i].write(tf_record)
+        if (j + 1) % num_records_per_file == 0:
+            if i == len(file_names) - 1:
+                # last file will have extra samples
+                continue
+            writers[i].close()
+            i += 1
+            pbar.set_description(f"Preparing {file_names[i]} ... ")
+    writers[-1].close()
+
     print(f"Total {len(dataloader)} tfrecords are sharded in `{args.tfrecord_dir}`")
     print("############# Data Stats #############")
     print(

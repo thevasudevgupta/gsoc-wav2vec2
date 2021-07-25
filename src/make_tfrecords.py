@@ -52,8 +52,6 @@ if __name__ == "__main__":
     file_names = [os.path.join(args.tfrecord_dir, f"{args.tfrecord_dir}-{i}.tfrecord") for i in range(args.num_shards)]
     writers = [tf.io.TFRecordWriter(file_name) for file_name in file_names]
 
-    dataset = dataset.take(num_records_per_file*args.num_shards)
-
     # following loops runs in O(n) time (assuming n = num_samples & for every tfrecord prepartion_take = O(1))
     i, speech_stats, label_stats = 0, [], []
     pbar = tqdm(dataset, total=len(dataloader), desc=f"Preparing {file_names[i]} ... ")

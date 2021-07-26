@@ -32,9 +32,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         "CLI to convert .flac dataset into .tfrecords format"
     )
-    parser.add_argument(
-        "--data_dir", default="../data/LibriSpeech/dev-clean", type=str
-    )
+    parser.add_argument("--data_dir", default="../data/LibriSpeech/dev-clean", type=str)
     parser.add_argument("-d", "--tfrecord_dir", default="dev-clean", type=str)
     parser.add_argument("-n", "--num_shards", default=1, type=int)
 
@@ -49,7 +47,10 @@ if __name__ == "__main__":
     # this will help TFRecordDataset to read shards in parallel from several files
     # Docs suggest to keep each shard around 100 MB in size, so choose num_shards accordingly
     num_records_per_file = len(dataloader) // args.num_shards
-    file_names = [os.path.join(args.tfrecord_dir, f"{args.tfrecord_dir}-{i}.tfrecord") for i in range(args.num_shards)]
+    file_names = [
+        os.path.join(args.tfrecord_dir, f"{args.tfrecord_dir}-{i}.tfrecord")
+        for i in range(args.num_shards)
+    ]
     writers = [tf.io.TFRecordWriter(file_name) for file_name in file_names]
 
     # following loops runs in O(n) time (assuming n = num_samples & for every tfrecord prepartion_take = O(1))

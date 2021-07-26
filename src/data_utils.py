@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import tensorflow as tf
 
@@ -28,7 +28,15 @@ def read_tfrecords(record):
 
 
 class CommonDataLoader:
-    def __init__(self, batch_size, buffer_size, audio_pad_id, labels_pad_id, audio_maxlen, labels_maxlen):
+    def __init__(
+        self,
+        batch_size: int,
+        buffer_size: int,
+        audio_pad_id: Union[int, float],
+        labels_pad_id: int,
+        audio_maxlen: int,
+        labels_maxlen: int,
+    ):
         self.batch_size = batch_size
         self.buffer_size = buffer_size
 
@@ -126,7 +134,14 @@ class LibriSpeechDataLoader(CommonDataLoader):
     def __init__(
         self, args: LibriSpeechDataLoaderArgs, required_sample_rate: int = 16000
     ):
-        super().__init__(args.batch_size, args.buffer_size, args.audio_pad_id, args.labels_pad_id, args.audio_maxlen, args.labels_maxlen)
+        super().__init__(
+            args.batch_size,
+            args.buffer_size,
+            args.audio_pad_id,
+            args.labels_pad_id,
+            args.audio_maxlen,
+            args.labels_maxlen,
+        )
 
         self.from_tfrecords = args.from_tfrecords
         self.tfrecords = args.tfrecords
@@ -245,7 +260,14 @@ class LibriSpeechDataLoader(CommonDataLoader):
 
 class TimitDataLoader(CommonDataLoader):
     def __init__(self, args: TimitDataLoaderArgs):
-        super().__init__(args.batch_size, args.buffer_size, args.audio_pad_id, args.labels_pad_id, args.audio_maxlen, args.labels_maxlen)
+        super().__init__(
+            args.batch_size,
+            args.buffer_size,
+            args.audio_pad_id,
+            args.labels_pad_id,
+            args.audio_maxlen,
+            args.labels_maxlen,
+        )
 
         self.data_dir = args.data_dir
 
@@ -257,20 +279,22 @@ class TimitDataLoader(CommonDataLoader):
         self._fetch_and_push_files(self.data_dir, wav_files, self.wav_ext)
         self._fetch_and_push_files(self.data_dir, txt_files, self.txt_ext)
 
-        wav_files = set([f[:-len(self.wav_ext)] for f in wav_files])
-        txt_files = set([f[:-len(self.txt_ext)] for f in txt_files])
+        wav_files = set([f[: -len(self.wav_ext)] for f in wav_files])
+        txt_files = set([f[: -len(self.txt_ext)] for f in txt_files])
 
         # consider only those files which has both text & speech
         files = list(wav_files & txt_files)
         print(f"found {len(files)} samples in {self.data_dir}")
 
-        wav_files = [f+self.wav_ext for f in files]
-        txt_files = [f+self.txt_ext for f in files]
+        wav_files = [f + self.wav_ext for f in files]
+        txt_files = [f + self.txt_ext for f in files]
 
         labels = [self._prepare_labels(self.read_timit_txt(f)) for f in txt_files]
 
         dataset = tf.data.Dataset.from_tensor_slices((wav_files, labels))
-        dataset = dataset.map(lambda sound_path, label: (self.read_sound(sound_path), label))
+        dataset = dataset.map(
+            lambda sound_path, label: (self.read_sound(sound_path), label)
+        )
         return self.batchify(dataset, seed=seed, drop_remainder=drop_remainder)
 
     def _prepare_labels(self, text: str):

@@ -89,19 +89,23 @@ class TrainingArgs:
         if DUMMY_DATA_PATH != "none":
             self.train_dir = self.val_dir = self.test_dir = None
             self.train_tfrecords = tf.io.gfile.glob(DUMMY_DATA_PATH)
-            self.test_tfrecords = self.val_tfrecords  = self.train_tfrecords
+            self.test_tfrecords = self.val_tfrecords = self.train_tfrecords
             assert self.from_tfrecords
         else:
             if self.from_tfrecords:
                 self.train_dir = self.val_dir = self.test_dir = None
 
-                train_tfrecords = [f"{record}*.tfrecord" for record in self.train_tfrecords]
+                train_tfrecords = [
+                    f"{record}*.tfrecord" for record in self.train_tfrecords
+                ]
                 self.train_tfrecords = tf.io.gfile.glob(train_tfrecords)
 
                 val_tfrecords = [f"{record}*.tfrecord" for record in self.val_tfrecords]
                 self.val_tfrecords = tf.io.gfile.glob(val_tfrecords)
 
-                test_tfrecords = [f"{record}*.tfrecord" for record in self.test_tfrecords]
+                test_tfrecords = [
+                    f"{record}*.tfrecord" for record in self.test_tfrecords
+                ]
                 self.test_tfrecords = tf.io.gfile.glob(test_tfrecords)
 
                 assert (

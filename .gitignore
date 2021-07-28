@@ -20,4 +20,5 @@ wandb
 tf-wav2vec2-base-960h/
 saved-model/
 
+vocab.json
 debugger.ipynb

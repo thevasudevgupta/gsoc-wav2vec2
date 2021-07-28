@@ -9,7 +9,7 @@ import tensorflow as tf
 
 class Wav2Vec2Processor:
     def __init__(
-        self, is_tokenizer, do_normalize=True, vocab_path="../data/vocab.json"
+        self, is_tokenizer, do_normalize=True, vocab_path="./vocab.json"
     ):
         # whether to use as `feature_extractor` or `tokenizer`
 

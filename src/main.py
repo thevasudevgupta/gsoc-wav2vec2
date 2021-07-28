@@ -75,8 +75,7 @@ class TrainingArgs:
     test_dir: str = "../data/LibriSpeech/test-clean/"
 
     model_id: str = "vasudevgupta/tf-wav2vec2-base"
-    base_dir: str = "checkpoints"
-    ckpt_path: str = "checkpoint"
+    ckpt_path: str = "gs://gsoc-checkpoints/experiment"
 
     # wandb args
     project_name: str = "gsoc-wav2vec2"
@@ -113,13 +112,6 @@ class TrainingArgs:
                 )
             else:
                 self.train_tfrecords = self.val_tfrecords = self.test_tfrecords = None
-
-        if self.base_dir is not None:
-            os.makedirs(self.base_dir, exist_ok=True)
-            if wandb.run is not None:
-                self.base_dir = self.base_dir + f"-{wandb.run.id}"
-
-        self.ckpt_path = os.path.join(self.base_dir, self.ckpt_path)
 
 
 def main(args):
@@ -227,10 +219,10 @@ if __name__ == "__main__":
 
     # setting up args for training (supports wandb sweep for distributed hparams tuning)
     args = TrainingArgs()
-    wandb.init(project=args.project_name, config=asdict(args), dir=args.base_dir)
+    wandb.init(project=args.project_name, config=asdict(args))
     logging_dict = dict(wandb.config)
-    # TODO: fix sweep
-    # args = replace(args, **logging_dict)
+    logging_dict["ckpt_path"] = os.path.join(args.ckpt_path + f"-{wandb.run.id}", "saved-model")
+    args = replace(args, **logging_dict)
 
     # setting up seed for reproducible runs
     tf.random.set_seed(args.seed)

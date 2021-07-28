@@ -31,10 +31,12 @@ class TrainingArgs:
     # main hparams
     lr: float = 2e-5
     transition_epoch: int = 1
-    max_epochs: int = 2
-    batch_size_per_device: int = 16
+    max_epochs: int = 3
+    batch_size_per_device: int = 2
 
-    logging_steps: int = 1
+    logging_steps: int = 2
+    # note epoch is starting from 0
+    trainable_transition_epoch: int = 1
 
     # regularization
     apply_spec_augment: bool = True
@@ -111,9 +113,6 @@ class TrainingArgs:
                 )
             else:
                 self.train_tfrecords = self.val_tfrecords = self.test_tfrecords = None
-
-        if self.logging_steps is not None:
-            os.environ["LOGGING_STEPS"] = str(self.logging_steps)
 
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
@@ -193,8 +192,12 @@ def main(args):
             survival_prob=args.survival_prob,
         )
 
-        # during fine-tuning, we need to freeze the feature extraction layer from the pre-trained weights
-        model.freeze_feature_extractor()
+        if args.trainable_transition_epoch > 0:
+            # till `trainable_transition_epoch`, we will train only `lm_head`
+            model.model.trainable = False
+        else:
+            # during fine-tuning, it's recommended to freeze the feature extraction layer from the pre-trained weights
+            model.freeze_feature_extractor()
 
         # `division_factor` should be passed else loss will be summed
         # it will help us in distributed training over several processes

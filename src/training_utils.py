@@ -1,23 +1,34 @@
-import os
 from functools import partial
 
 import tensorflow as tf
 import wandb
 
 
-LOGGING_STEPS = int(os.getenv("LOGGING_STEPS", "1"))
+class TrainingCallback(tf.keras.callbacks.Callback):
 
+    def __init__(self, logging_steps, trainable_transition_epoch):
+        super().__init__()
+        self.logging_steps = logging_steps
+        self.trainable_transition_epoch = trainable_transition_epoch
 
-class LoggingCallback(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs):
-        if batch % LOGGING_STEPS == 0:
+        if batch % self.logging_steps == 0:
             wandb.log({**logs, "lr": self.model.optimizer.learning_rate}, commit=True)
+
+        print("parameters", len(self.model.trainable_variables))
 
     def on_test_end(self, logs):
         wandb.log(logs, commit=False)
 
     def on_epoch_end(self, epoch, logs):
         wandb.log({**logs, "epoch": epoch}, commit=False)
+        if epoch == self.trainable_transition_epoch:
+            print("#######################################")
+            print("Freezing feature extractor layer & training rest of model")
+            self.model.trainable = True
+            self.model.freeze_feature_extractor()
+            self.model.summary()
+            print("#######################################")
 
     def on_train_end(self, logs):
         print("########## TRAINING FINISHED ##########")
@@ -33,7 +44,8 @@ def fetch_callbacks(args):
     scheduler = partial(scheduler, transition_epoch=args.transition_epoch)
     lr_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
-    logging_callback = LoggingCallback()
+    training_callback = TrainingCallback(args.logging_steps, args.trainable_transition_epoch)
+
     ckpt_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=args.ckpt_path,
         save_weights_only=True,
@@ -43,7 +55,7 @@ def fetch_callbacks(args):
         save_freq="epoch",
     )
 
-    return [ckpt_callback, logging_callback, lr_callback]
+    return [ckpt_callback, training_callback, lr_callback]
 
 
 def is_tpu_available():

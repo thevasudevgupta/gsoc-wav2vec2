@@ -1,12 +1,12 @@
+import argparse
+from typing import Union
+
 import tensorflow as tf
 import transformers
-from typing import Union
 
 import numpy as np
 from tqdm.auto import tqdm
 from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Model
-
-import argparse
 
 
 SUFFIX = ":0"

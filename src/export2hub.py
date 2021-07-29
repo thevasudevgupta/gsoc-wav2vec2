@@ -1,9 +1,9 @@
+import argparse
+
 import tensorflow as tf
 
 from convert_torch_to_tf import get_tf_pretrained_model
 from wav2vec2 import Wav2Vec2Config
-
-import argparse
 
 
 def get_parser():

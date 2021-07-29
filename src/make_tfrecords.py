@@ -3,12 +3,7 @@ import os
 
 import tensorflow as tf
 
-from data_utils import (
-    LABEL_DTYPE,
-    SPEECH_DTYPE,
-    LibriSpeechDataLoader,
-    LibriSpeechDataLoaderArgs,
-)
+from data_utils import LABEL_DTYPE, SPEECH_DTYPE, LibriSpeechDataLoader, LibriSpeechDataLoaderArgs
 from tqdm.auto import tqdm
 
 

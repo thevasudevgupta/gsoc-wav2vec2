@@ -1,8 +1,7 @@
 import importlib
-import unittest
-
 import os
 import subprocess
+import unittest
 
 
 def is_transformers_available():

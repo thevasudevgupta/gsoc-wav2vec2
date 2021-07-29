@@ -17,11 +17,7 @@ import wandb
 
 import numpy as np
 from data_utils import LibriSpeechDataLoader, LibriSpeechDataLoaderArgs
-from training_utils import (
-    fetch_callbacks,
-    is_gpu_available,
-    is_tpu_available,
-)
+from training_utils import fetch_callbacks, is_gpu_available, is_tpu_available
 from wav2vec2 import CTCLoss, Wav2Vec2ForCTCTrainer
 
 

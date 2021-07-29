@@ -1,20 +1,18 @@
 import sys
+
+
 sys.path.extend(["src", "../src"])
 
 import unittest
 from functools import partial
 
-import numpy as np
 import tensorflow as tf
 
-from utils import try_download_file, if_path_exists
+import numpy as np
+from data_utils import LibriSpeechDataLoader, LibriSpeechDataLoaderArgs, TimitDataLoader, TimitDataLoaderArgs
+from utils import if_path_exists, try_download_file
 from wav2vec2 import Wav2Vec2Processor
-from data_utils import (
-    LibriSpeechDataLoader,
-    LibriSpeechDataLoaderArgs,
-    TimitDataLoaderArgs,
-    TimitDataLoader,
-)
+
 
 TFRECORD_URL = "https://huggingface.co/datasets/vasudevgupta/gsoc-librispeech/resolve/main/dev-clean/dev-clean-0.tfrecord"
 LIBRISPEECH_DIR = "data/LibriSpeech/dev-clean"

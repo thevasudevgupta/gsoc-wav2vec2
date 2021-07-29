@@ -1,4 +1,12 @@
-"""Run this script to launch training"""
+"""
+Run this script to launch training
+
+EXAMPLE:
+    >>> ON_TPU=true python3 main.py
+
+    >>> # for running dummy training on TPUs
+    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech/dev-clean/dev-clean-0.tfrecord ON_TPU=true python3 main.py
+"""
 
 import os
 from dataclasses import asdict, dataclass, field, replace
@@ -10,7 +18,6 @@ import wandb
 import numpy as np
 from data_utils import LibriSpeechDataLoader, LibriSpeechDataLoaderArgs
 from training_utils import (
-    LocalTPUClusterResolver,
     fetch_callbacks,
     is_gpu_available,
     is_tpu_available,
@@ -18,7 +25,7 @@ from training_utils import (
 from wav2vec2 import CTCLoss, Wav2Vec2ForCTCTrainer
 
 
-ON_COLAB_TPU = os.getenv("ON_COLAB_TPU", "false")
+ON_TPU = os.getenv("ON_TPU", "false")
 DUMMY_DATA_PATH = os.getenv("DUMMY_DATA_PATH", "none")
 
 
@@ -81,19 +88,24 @@ class TrainingArgs:
 
         if DUMMY_DATA_PATH != "none":
             self.train_dir = self.val_dir = self.test_dir = None
-            self.train_tfrecords = self.test_tfrecords = self.val_tfrecords = DUMMY_DATA_PATH
+            self.train_tfrecords = tf.io.gfile.glob(DUMMY_DATA_PATH)
+            self.test_tfrecords = self.val_tfrecords = self.train_tfrecords
             assert self.from_tfrecords
         else:
             if self.from_tfrecords:
                 self.train_dir = self.val_dir = self.test_dir = None
 
-                train_tfrecords = [f"{record}*.tfrecord" for record in self.train_tfrecords]
+                train_tfrecords = [
+                    f"{record}*.tfrecord" for record in self.train_tfrecords
+                ]
                 self.train_tfrecords = tf.io.gfile.glob(train_tfrecords)
 
                 val_tfrecords = [f"{record}*.tfrecord" for record in self.val_tfrecords]
                 self.val_tfrecords = tf.io.gfile.glob(val_tfrecords)
 
-                test_tfrecords = [f"{record}*.tfrecord" for record in self.test_tfrecords]
+                test_tfrecords = [
+                    f"{record}*.tfrecord" for record in self.test_tfrecords
+                ]
                 self.test_tfrecords = tf.io.gfile.glob(test_tfrecords)
 
                 assert (
@@ -116,9 +128,9 @@ class TrainingArgs:
 
 
 def main(args):
-    # on colab, we need to connect to TPU cluster first
+    # on TPUs, we need to connect to TPU cluster first
     # then TensorFlow will be able to detect TPUs
-    if ON_COLAB_TPU == "true":
+    if ON_TPU == "true":
         print("############ INITIATING COLAB TPU ############")
         resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
         tf.config.experimental_connect_to_cluster(resolver)
@@ -127,8 +139,6 @@ def main(args):
     jit_compile = True
     if is_tpu_available():
         jit_compile = None
-        if not ON_COLAB_TPU == "true":
-            resolver = LocalTPUClusterResolver()
         tf.tpu.experimental.initialize_tpu_system(resolver)
         print("All devices: ", tf.config.list_logical_devices("TPU"))
         strategy = tf.distribute.TPUStrategy(resolver)

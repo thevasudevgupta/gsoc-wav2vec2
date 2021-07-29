@@ -45,7 +45,10 @@ def replace(k: str, prefix) -> str:
 
 
 def get_tf_pretrained_model(
-    config: Wav2Vec2Config, hf_model_id: str, verbose=False, with_lm_head=True,
+    config: Wav2Vec2Config,
+    hf_model_id: str,
+    verbose=False,
+    with_lm_head=True,
 ) -> Union[Wav2Vec2ForCTC, Wav2Vec2Model]:
     """
     Converts HuggingFace PyTorch weights to TensorFlow compatible weights.
@@ -124,8 +127,17 @@ def get_tf_pretrained_model(
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hf_model_id", type=str, default="facebook/wav2vec2-base", help="Model ID of HuggingFace wav2vec2 which needs to be converted into TensorFlow")
-    parser.add_argument("--with_lm_head", action="store_true", help="Whether to use `Wav2Vec2Model` or `Wav2Vec2ForCTC` from `wav2vec2/modeling.py`")
+    parser.add_argument(
+        "--hf_model_id",
+        type=str,
+        default="facebook/wav2vec2-base",
+        help="Model ID of HuggingFace wav2vec2 which needs to be converted into TensorFlow",
+    )
+    parser.add_argument(
+        "--with_lm_head",
+        action="store_true",
+        help="Whether to use `Wav2Vec2Model` or `Wav2Vec2ForCTC` from `wav2vec2/modeling.py`",
+    )
     return parser
 
 
@@ -134,7 +146,9 @@ if __name__ == "__main__":
     args = get_parser().parse_args()
 
     config = Wav2Vec2Config()
-    tf_model, _ = get_tf_pretrained_model(config, args.hf_model_id, verbose=True, with_lm_head=args.with_lm_head)
+    tf_model, _ = get_tf_pretrained_model(
+        config, args.hf_model_id, verbose=True, with_lm_head=args.with_lm_head
+    )
 
     model_id = "tf-" + args.hf_model_id.split("/")[-1]
     tf_model.save_pretrained(model_id)

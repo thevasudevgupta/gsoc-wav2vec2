@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import tensorflow as tf
 
@@ -14,7 +14,7 @@ LABEL_DTYPE = tf.int32
 AUTOTUNE = tf.data.AUTOTUNE
 
 
-def read_tfrecords(record):
+def read_tfrecords(record: tf.train.Example):
     desc = {
         "speech": tf.io.FixedLenFeature((), tf.string),
         "label": tf.io.FixedLenFeature((), tf.string),
@@ -25,6 +25,70 @@ def read_tfrecords(record):
     label = tf.io.parse_tensor(record["label"], out_type=LABEL_DTYPE)
 
     return speech, label
+
+
+class CommonDataLoader:
+    def __init__(
+        self,
+        batch_size: int,
+        buffer_size: int,
+        audio_pad_id: Union[int, float],
+        labels_pad_id: int,
+        audio_maxlen: int,
+        labels_maxlen: int,
+    ):
+        self.batch_size = batch_size
+        self.buffer_size = buffer_size
+
+        self.audio_pad_id = float(audio_pad_id)
+        self.labels_pad_id = labels_pad_id
+
+        self.audio_maxlen = audio_maxlen
+        self.labels_maxlen = labels_maxlen
+
+        self.processor = Wav2Vec2Processor(is_tokenizer=False)
+        self.tokenizer = Wav2Vec2Processor(is_tokenizer=True)
+
+    def batchify(
+        self,
+        dataset: tf.data.Dataset,
+        seed: int = None,
+        drop_remainder: bool = True
+    ):
+        # shuffling for training
+        if seed is not None:
+            dataset.shuffle(self.buffer_size, seed=seed)
+
+        padded_shapes = (self.audio_maxlen, self.labels_maxlen)
+        padding_values = (self.audio_pad_id, self.labels_pad_id)
+
+        dataset = dataset.map(self.restrict_to_maxlen)
+        dataset = dataset.padded_batch(
+            self.batch_size,
+            padded_shapes=padded_shapes,
+            padding_values=padding_values,
+            drop_remainder=drop_remainder,
+        )
+
+        return dataset.prefetch(AUTOTUNE)
+
+    def restrict_to_maxlen(self, speech: tf.Tensor, labels: tf.Tensor):
+        """This must be called before doing padding"""
+        speech, labels = speech[:self.audio_maxlen], labels[:self.labels_maxlen]
+        return speech, labels
+
+    def _fetch_and_push_files(self, data_dir: str, file_paths: list, file_pattern: str):
+        """All files will be recursively collected from the `data_dir`."""
+        listdir = os.listdir(data_dir)
+        for f in listdir:
+            f = os.path.join(data_dir, f)
+            if f.endswith(file_pattern):
+                f = os.path.abspath(f)
+                file_paths.append(f)
+                continue
+
+            if os.path.isdir(f):
+                self._fetch_and_push_files(f, file_paths, file_pattern)
 
 
 @dataclass
@@ -57,31 +121,42 @@ class LibriSpeechDataLoaderArgs:
             ), "You must specify `data_dir` when `from_tfrecords=False`."
 
 
-class LibriSpeechDataLoader:
+@dataclass
+class TimitDataLoaderArgs:
+    data_dir: str = "../data/timit/data/TRAIN"
+
+    batch_size: int = 16
+    buffer_size: int = 10000
+
+    audio_maxlen: int = 400000
+    audio_pad_id: int = 0
+
+    labels_maxlen: int = 128
+    labels_pad_id: int = 0
+
+
+class LibriSpeechDataLoader(CommonDataLoader):
     def __init__(
         self, args: LibriSpeechDataLoaderArgs, required_sample_rate: int = 16000
     ):
+        super().__init__(
+            args.batch_size,
+            args.buffer_size,
+            args.audio_pad_id,
+            args.labels_pad_id,
+            args.audio_maxlen,
+            args.labels_maxlen,
+        )
+
         self.from_tfrecords = args.from_tfrecords
         self.tfrecords = args.tfrecords
         self.data_dir = args.data_dir
 
-        self.batch_size = args.batch_size
-        self.buffer_size = args.buffer_size
-
         self.required_sample_rate = required_sample_rate
-
-        self.audio_pad_id = float(args.audio_pad_id)
-        self.labels_pad_id = args.labels_pad_id
-
-        self.audio_maxlen = args.audio_maxlen
-        self.labels_maxlen = args.labels_maxlen
-
-        self.processor = Wav2Vec2Processor(is_tokenizer=False)
-        self.tokenizer = Wav2Vec2Processor(is_tokenizer=True)
 
         self._num_samples = None
 
-    def __call__(self, seed=None, drop_remainder=True) -> tf.data.Dataset:
+    def __call__(self, seed: int = None, drop_remainder: bool = True) -> tf.data.Dataset:
 
         if not self.from_tfrecords:
             dataset = self.build_and_fetch_dataset()
@@ -91,27 +166,7 @@ class LibriSpeechDataLoader:
             dataset = dataset.map(read_tfrecords, num_parallel_calls=AUTOTUNE)
             print("Done!")
 
-        # shuffling for training
-        if seed is not None:
-            dataset.shuffle(self.buffer_size, seed=seed)
-
-        padded_shapes = (self.audio_maxlen, self.labels_maxlen)
-        padding_values = (self.audio_pad_id, self.labels_pad_id)
-
-        dataset = dataset.map(self.restrict_to_maxlen)
-        dataset = dataset.padded_batch(
-            self.batch_size,
-            padded_shapes=padded_shapes,
-            padding_values=padding_values,
-            drop_remainder=drop_remainder,
-        )
-
-        return dataset.prefetch(AUTOTUNE)
-
-    def restrict_to_maxlen(self, speech, labels):
-        """This must be called before doing padding"""
-        speech, labels = speech[: self.audio_maxlen], labels[: self.labels_maxlen]
-        return speech, labels
+        return self.batchify(dataset, seed=seed, drop_remainder=drop_remainder)
 
     def build_and_fetch_dataset(self):
         """
@@ -162,7 +217,7 @@ class LibriSpeechDataLoader:
             raise NotImplementedError
         return self._num_samples
 
-    def read_sound(self, file_path):
+    def read_sound(self, file_path: str):
         with open(file_path, "rb") as f:
             audio, sample_rate = sf.read(f)
         if sample_rate != self.required_sample_rate:
@@ -207,37 +262,63 @@ class LibriSpeechDataLoader:
                 all_samples.update(samples)
         return all_samples
 
-    def _fetch_and_push_files(self, data_dir, file_paths: list, file_pattern: str):
-        """All files will be recursively collected from the `data_dir`."""
-        listdir = os.listdir(data_dir)
-        for f in listdir:
-            f = os.path.join(data_dir, f)
-            if f.endswith(file_pattern):
-                f = os.path.abspath(f)
-                file_paths.append(f)
-                continue
 
-            if os.path.isdir(f):
-                self._fetch_and_push_files(f, file_paths, file_pattern)
+class TimitDataLoader(CommonDataLoader):
+    def __init__(self, args: TimitDataLoaderArgs):
+        super().__init__(
+            args.batch_size,
+            args.buffer_size,
+            args.audio_pad_id,
+            args.labels_pad_id,
+            args.audio_maxlen,
+            args.labels_maxlen,
+        )
 
+        self.data_dir = args.data_dir
 
-if __name__ == "__main__":
-    """Testing Area"""
-    tokenizer = Wav2Vec2Processor(is_tokenizer=True)
+        self.wav_ext = ".WAV"
+        self.txt_ext = ".TXT"
 
-    data_args = LibriSpeechDataLoaderArgs(
-        from_tfrecords=True, tfrecords=["../data/test/test-clean.tfrecord"]
-    )
-    dataloader = LibriSpeechDataLoader(data_args)
-    dataset = dataloader(seed=None)
+    def __call__(self, seed: int = None, drop_remainder: bool = True) -> tf.data.Dataset:
+        wav_files, txt_files = [], []
+        self._fetch_and_push_files(self.data_dir, wav_files, self.wav_ext)
+        self._fetch_and_push_files(self.data_dir, txt_files, self.txt_ext)
 
-    for batch in dataset.take(32):
-        print("BATCH SHAPE:", batch[0].shape)
-        print("BATCH:", tokenizer.decode(batch[1][0].numpy().tolist()))
+        wav_files = set([f[:-len(self.wav_ext)] for f in wav_files])
+        txt_files = set([f[:-len(self.txt_ext)] for f in txt_files])
 
-    # data_args = LibriSpeechDataLoaderArgs(from_tfrecords=False)
-    # dataloader = LibriSpeechDataLoader(data_args)
-    # dataset = dataloader(seed=None)
+        # consider only those files which has both text & speech
+        files = list(wav_files & txt_files)
+        print(f"found {len(files)} samples in {self.data_dir}")
 
-    # for batch in dataset.take(32):
-    #     print("BATCH SHAPE", batch[0].shape)
+        wav_files = [f + self.wav_ext for f in files]
+        txt_files = [f + self.txt_ext for f in files]
+
+        labels = [self._prepare_labels(self.read_timit_txt(f)) for f in txt_files]
+
+        dataset = tf.data.Dataset.from_tensor_slices((wav_files, labels))
+        dataset = dataset.map(
+            lambda sound_path, label: (self.read_sound(sound_path), label)
+        )
+        return self.batchify(dataset, seed=seed, drop_remainder=drop_remainder)
+
+    def _prepare_labels(self, text: str):
+        def _pad(sample: list):
+            while len(sample) < max_length:
+                sample.append(pad_id)
+            return sample
+
+        max_length = self.labels_maxlen
+        pad_id = self.labels_pad_id
+        # TODO : add some processing for cleaning text a bit
+        return _pad(self.tokenizer(text))
+
+    def read_timit_txt(self, file_path: str):
+        with open(file_path, "r") as f:
+            text = f.read().split()[2:]
+        return " ".join(text)
+
+    def read_sound(self, file_path: Union[str, tf.Tensor]):
+        audio = tf.io.read_file(file_path)
+        audio, _ = tf.audio.decode_wav(audio)
+        return self.processor(tf.squeeze(audio))

@@ -1,8 +1,10 @@
 # Wav2Vec2 (GSoC'21)
 
-In this repositary, I have implemented **Wav2Vec2** model (from paper: [**wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations**](https://arxiv.org/abs/2006.11477)) in **TensorFlow 2.0** as a part of [**GSoC'21**](https://summerofcode.withgoogle.com/) project.
+This repository presents an implementation of the **Wav2Vec2** model [1] in **TensorFlow 2.0** as a part of [**GSoC'21**](https://summerofcode.withgoogle.com/) project.
 
 ## Notebooks
+
+The repository comes with shiny Colab Notebooks. Below you can find a list of them. Spin them up and don't forget to have fun!
 
 | Notebook | Description |
 |------------|-------------|
@@ -12,9 +14,13 @@ In this repositary, I have implemented **Wav2Vec2** model (from paper: [**wav2ve
 
 ## Checkpoints
 
-| Checkpoint | Saved Model | Description |
+The original model checkpoints are provided in PyTorch. But you can find the equivalent TensorFlow `SavedModel` on [TensorFlow Hub](https://tfhub.dev/vasudevgupta7/wav2vec2/1). Below is a summary.
+
+| Checkpoint | TF `SavedModel` | Description |
 |------------|-------------|-------------|
 | [HuggingFace-Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of pre-trained Wav2Vec2 by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+
+To know about how to run the conversion process for obtaining the TensorFlow `SavedModel` keep reading. 
 
 ## Using this Repository
 
@@ -77,3 +83,7 @@ pytest -sv tests
 * [Sayak Paul](https://github.com/sayakpaul)
 * [Morgan Roff](https://github.com/MorganR)
 * [Jaeyoun Kim](https://github.com/jaeyounkim)
+
+## References
+
+[1] Baevski, Alexei, et al. “Wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.” ArXiv:2006.11477 [Cs, Eess], Oct. 2020. arXiv.org, http://arxiv.org/abs/2006.11477.

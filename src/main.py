@@ -31,14 +31,16 @@ DUMMY_DATA_PATH = os.getenv("DUMMY_DATA_PATH", "none")
 class TrainingArgs:
 
     # main hparams
-    lr: float = 2e-5
-    transition_epoch: int = 1
-    max_epochs: int = 3
-    batch_size_per_device: int = 2
+    lr1: float = 1e-4
+    lr2: float = 2e-5
+    lr3: float = 4e-5
+    transition_epoch1: int = 10
+    transition_epoch2: int = 20
+    max_epochs: int = 30
+    batch_size_per_device: int = 64
 
-    logging_steps: int = 2
-    # note epoch is starting from 0
-    trainable_transition_epoch: int = 1
+    logging_steps: int = 16
+    trainable_transition_epoch: int = 10
 
     # regularization
     apply_spec_augment: bool = True
@@ -55,20 +57,20 @@ class TrainingArgs:
     train_tfrecords: List[str] = field(
         default_factory=lambda: [
             f"gs://{DATA_BUCKET_NAME}/train-clean-100/",
-            f"gs://{DATA_BUCKET_NAME}/train-clean-360/",
-            f"gs://{DATA_BUCKET_NAME}/train-other-500/",
+            # f"gs://{DATA_BUCKET_NAME}/train-clean-360/",
+            # f"gs://{DATA_BUCKET_NAME}/train-other-500/",
         ]
     )
     val_tfrecords: List[str] = field(
         default_factory=lambda: [
             f"gs://{DATA_BUCKET_NAME}/dev-clean/",
-            f"gs://{DATA_BUCKET_NAME}/dev-other/",
+            # f"gs://{DATA_BUCKET_NAME}/dev-other/",
         ]
     )
     test_tfrecords: List[str] = field(
         default_factory=lambda: [
             f"gs://{DATA_BUCKET_NAME}/test-clean/",
-            f"gs://{DATA_BUCKET_NAME}/test-other/",
+            # f"gs://{DATA_BUCKET_NAME}/test-other/",
         ]
     )
 
@@ -199,18 +201,21 @@ def main(args):
             model.config, model_input_shape, division_factor=global_batch_size
         )
 
-        optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr1)
         model.compile(optimizer, loss_fn)
 
     model.summary()
     print("######### Initiating training #########")
-    model.fit(
-        tr_dataset,
-        validation_data=val_dataset,
-        epochs=args.max_epochs,
-        callbacks=fetch_callbacks(args),
-        verbose="auto",
-    )
+    try:
+        model.fit(
+            tr_dataset,
+            validation_data=val_dataset,
+            epochs=args.max_epochs,
+            callbacks=fetch_callbacks(args),
+            verbose="auto",
+        )
+    except KeyboardInterrupt:
+        print("Interrupting through KEYBOARD")
 
     print("\n######### Preparing for evaluation #########")
     results = model.evaluate(test_dataset, return_dict=True)
@@ -222,9 +227,7 @@ if __name__ == "__main__":
     # setting up args for training (supports wandb sweep for distributed hparams tuning)
     args = TrainingArgs()
     wandb.init(project=args.project_name, config=asdict(args))
-    logging_dict = dict(wandb.config)
-    logging_dict["ckpt_path"] = os.path.join(args.ckpt_path + f"-{wandb.run.id}", "saved-model")
-    args = replace(args, **logging_dict)
+    args.ckpt_path = os.path.join(args.ckpt_path + f"-{wandb.run.id}", "saved-model")
 
     # setting up seed for reproducible runs
     tf.random.set_seed(args.seed)

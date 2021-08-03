@@ -15,8 +15,6 @@ class TrainingCallback(tf.keras.callbacks.Callback):
         if batch % self.logging_steps == 0:
             wandb.log({**logs, "lr": self.model.optimizer.learning_rate}, commit=True)
 
-        print("parameters", len(self.model.trainable_variables))
-
     def on_test_end(self, logs):
         wandb.log(logs, commit=False)
 
@@ -37,11 +35,16 @@ class TrainingCallback(tf.keras.callbacks.Callback):
 
 
 def fetch_callbacks(args):
-    def scheduler(epoch, lr, transition_epoch):
-        multiplier = 1 if epoch < transition_epoch else lr * tf.math.exp(-0.1)
-        return lr * multiplier
+    def scheduler(epoch, lr, lr1, lr2, lr3, transition_epoch1, transition_epoch2):
+        if epoch <= transition_epoch1:
+            lr = lr1
+        elif epoch <= transition_epoch2:
+            lr = lr2
+        else:
+            lr = lr3
+        return lr
 
-    scheduler = partial(scheduler, transition_epoch=args.transition_epoch)
+    scheduler = partial(scheduler, lr1=args.lr1, lr2=args.lr2, lr3=args.lr3, transition_epoch1=args.transition_epoch1, transition_epoch2=args.transition_epoch2)
     lr_callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
     training_callback = TrainingCallback(args.logging_steps, args.trainable_transition_epoch)

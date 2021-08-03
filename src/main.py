@@ -2,10 +2,10 @@
 Run this script to launch training
 
 EXAMPLE:
-    >>> ON_TPU=true python3 main.py
+    >>> TPU_NAME=gsoc-project python3 main.py
 
     >>> # for running dummy training on TPUs
-    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech/dev-clean/dev-clean-0.tfrecord ON_TPU=true python3 main.py
+    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech/dev-clean/dev-clean-0.tfrecord TPU_NAME=gsoc-project python3 main.py
 """
 
 import os
@@ -21,7 +21,9 @@ from training_utils import fetch_callbacks, is_gpu_available, is_tpu_available
 from wav2vec2 import CTCLoss, Wav2Vec2ForCTCTrainer
 
 
-ON_TPU = os.getenv("ON_TPU", "false")
+TPU_NAME = os.getenv("TPU_NAME", "none")
+DATA_BUCKET_NAME = os.getenv("DATA_BUCKET_NAME", "gsoc-librispeech-us")
+CKPT_BUCKET_NAME = os.getenv("CKPT_BUCKET_NAME", "gsoc-checkpoints-us")
 DUMMY_DATA_PATH = os.getenv("DUMMY_DATA_PATH", "none")
 
 
@@ -52,21 +54,21 @@ class TrainingArgs:
 
     train_tfrecords: List[str] = field(
         default_factory=lambda: [
-            "gs://gsoc-librispeech/train-clean-100/",
-            "gs://gsoc-librispeech/train-clean-360/",
-            "gs://gsoc-librispeech/train-other-500/",
+            f"gs://{DATA_BUCKET_NAME}/train-clean-100/",
+            f"gs://{DATA_BUCKET_NAME}/train-clean-360/",
+            f"gs://{DATA_BUCKET_NAME}/train-other-500/",
         ]
     )
     val_tfrecords: List[str] = field(
         default_factory=lambda: [
-            "gs://gsoc-librispeech/dev-clean/",
-            "gs://gsoc-librispeech/dev-other/",
+            f"gs://{DATA_BUCKET_NAME}/dev-clean/",
+            f"gs://{DATA_BUCKET_NAME}/dev-other/",
         ]
     )
     test_tfrecords: List[str] = field(
         default_factory=lambda: [
-            "gs://gsoc-librispeech/test-clean/",
-            "gs://gsoc-librispeech/test-other/",
+            f"gs://{DATA_BUCKET_NAME}/test-clean/",
+            f"gs://{DATA_BUCKET_NAME}/test-other/",
         ]
     )
 
@@ -75,7 +77,7 @@ class TrainingArgs:
     test_dir: str = "../data/LibriSpeech/test-clean/"
 
     model_id: str = "vasudevgupta/tf-wav2vec2-base"
-    ckpt_path: str = "gs://gsoc-checkpoints/experiment"
+    ckpt_path: str = f"gs://{CKPT_BUCKET_NAME}/experiment"
 
     # wandb args
     project_name: str = "gsoc-wav2vec2"
@@ -117,9 +119,9 @@ class TrainingArgs:
 def main(args):
     # on TPUs, we need to connect to TPU cluster first
     # then TensorFlow will be able to detect TPUs
-    if ON_TPU == "true":
+    if TPU_NAME != "none":
         print("############ INITIATING COLAB TPU ############")
-        resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+        resolver = tf.distribute.cluster_resolver.TPUClusterResolver(TPU_NAME)
         tf.config.experimental_connect_to_cluster(resolver)
         print("##############################################")
 

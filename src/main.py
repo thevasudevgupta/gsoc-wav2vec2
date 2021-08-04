@@ -18,7 +18,7 @@ import wandb
 import numpy as np
 from data_utils import LibriSpeechDataLoader, LibriSpeechDataLoaderArgs
 from training_utils import fetch_callbacks, is_gpu_available, is_tpu_available
-from wav2vec2 import CTCLoss, Wav2Vec2ForCTCTrainer
+from wav2vec2 import CTCLoss, Wav2Vec2Model
 
 
 TPU_NAME = os.getenv("TPU_NAME", "none")
@@ -43,7 +43,7 @@ class TrainingArgs:
     trainable_transition_epoch: int = 10
 
     # regularization
-    apply_spec_augment: bool = True
+    apply_spec_augment: bool = False
     survival_prob: float = 1
 
     # try to keep everything multiple of 128 on TPUs
@@ -78,7 +78,7 @@ class TrainingArgs:
     val_dir: str = "../data/LibriSpeech/test-clean/"
     test_dir: str = "../data/LibriSpeech/test-clean/"
 
-    model_id: str = "vasudevgupta/tf-wav2vec2-base"
+    model_id: str = "vasudevgupta/gsoc-wav2vec2"
     ckpt_path: str = f"gs://{CKPT_BUCKET_NAME}/experiment"
 
     # wandb args
@@ -118,18 +118,45 @@ class TrainingArgs:
                 self.train_tfrecords = self.val_tfrecords = self.test_tfrecords = None
 
 
+def build_model(saved_model_path, args, model_config, model_input_shape, division_factor):
+    model = tf.keras.Sequential([
+        tf.keras.models.load_model(saved_model_path),
+        tf.keras.layers.Dense(model_config.vocab_size, name="lm_head"),
+    ])
+
+    print("######## FREEZING ########")
+    if args.trainable_transition_epoch > 0:
+        # till `trainable_transition_epoch`, we will train only `lm_head`
+        model.layers[0].trainable = False
+        print(model.layers[0])
+    else:
+        # during fine-tuning, it's recommended to freeze the feature extraction layer from the pre-trained weights
+        for i in range(len(model.layers[0].layers) - 2):
+            model.layers[0].layers[i].trainable = False
+            print(model.layers[0].layers[i])
+    print("#########################")
+
+    # `division_factor` should be passed else loss will be summed
+    # it will help us in distributed training over several processes
+    loss_fn = CTCLoss(
+        model_config, model_input_shape, division_factor=division_factor
+    )
+
+    optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr1)
+    model.compile(optimizer=optimizer, loss=loss_fn)
+    return model
+
+
 def main(args):
     # on TPUs, we need to connect to TPU cluster first
     # then TensorFlow will be able to detect TPUs
     if TPU_NAME != "none":
-        print("############ INITIATING COLAB TPU ############")
+        print("############ INITIATING TPU ############")
         resolver = tf.distribute.cluster_resolver.TPUClusterResolver(TPU_NAME)
         tf.config.experimental_connect_to_cluster(resolver)
         print("##############################################")
 
-    jit_compile = True
     if is_tpu_available():
-        jit_compile = None
         tf.tpu.experimental.initialize_tpu_system(resolver)
         print("All devices: ", tf.config.list_logical_devices("TPU"))
         strategy = tf.distribute.TPUStrategy(resolver)
@@ -138,9 +165,12 @@ def main(args):
         strategy = tf.distribute.MirroredStrategy()
     else:
         print("All devices: ", tf.config.list_logical_devices("CPU"))
-        raise NotImplementedError
+        strategy = None
 
-    global_batch_size = strategy.num_replicas_in_sync * args.batch_size_per_device
+    if strategy is not None:
+        global_batch_size = strategy.num_replicas_in_sync * args.batch_size_per_device
+    else:
+        global_batch_size = args.batch_size_per_device
     print("Training with global batch size of", global_batch_size)
     print(args, end="\n\n")
 
@@ -178,48 +208,41 @@ def main(args):
     # NOTE: here we are using `batch_size_per_device` instead of `global_batch_size`
     # since loss will be calculated over each microbatch & will get summed
 
-    with strategy.scope():
-        print("######### Preparing model #########")
-        model = Wav2Vec2ForCTCTrainer.from_pretrained(
-            args.model_id,
-            jit_compile=jit_compile,
-            input_shape=model_input_shape,
-            apply_spec_augment=args.apply_spec_augment,
-            survival_prob=args.survival_prob,
-        )
+    # saving model in saved-model to load it later on TPUs
+    saved_model_path = f"{os.path.split(args.model_id)[-1]}-saved-model"
+    model = Wav2Vec2Model.from_pretrained(
+        args.model_id,
+        input_shape=(1, 50000),
+        apply_spec_augment=args.apply_spec_augment,
+        survival_prob=args.survival_prob,
+    )
+    input_signature = [tf.TensorSpec(model_input_shape, tf.float32, name="speech")]
+    model.__call__ = tf.function(model.__call__, input_signature=input_signature)
+    model.save(saved_model_path)
 
-        if args.trainable_transition_epoch > 0:
-            # till `trainable_transition_epoch`, we will train only `lm_head`
-            model.model.trainable = False
-        else:
-            # during fine-tuning, it's recommended to freeze the feature extraction layer from the pre-trained weights
-            model.freeze_feature_extractor()
+    print("######### Preparing model #########")
+    if strategy is not None:
+        with strategy.scope():
+            model = build_model(saved_model_path, args, model.config, model_input_shape, global_batch_size)
+    else:
+        model = build_model(saved_model_path, args, model.config, model_input_shape, global_batch_size)
 
-        # `division_factor` should be passed else loss will be summed
-        # it will help us in distributed training over several processes
-        loss_fn = CTCLoss(
-            model.config, model_input_shape, division_factor=global_batch_size
-        )
-
-        optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr1)
-        model.compile(optimizer, loss_fn)
-
-    model.summary()
-    print("######### Initiating training #########")
+    print("######### Training #########")
     try:
-        model.fit(
+        history = model.fit(
             tr_dataset,
             validation_data=val_dataset,
             epochs=args.max_epochs,
             callbacks=fetch_callbacks(args),
             verbose="auto",
         )
+        print(history.history)
     except KeyboardInterrupt:
         print("Interrupting through KEYBOARD")
 
-    print("\n######### Preparing for evaluation #########")
+    print("\n######### Running evaluation #########")
     results = model.evaluate(test_dataset, return_dict=True)
-    print("RESULTS:\n", results)
+    print(results)
 
 
 if __name__ == "__main__":

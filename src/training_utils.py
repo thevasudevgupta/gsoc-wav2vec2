@@ -5,7 +5,6 @@ import wandb
 
 
 class TrainingCallback(tf.keras.callbacks.Callback):
-
     def __init__(self, logging_steps, trainable_transition_epoch):
         super().__init__()
         self.logging_steps = logging_steps
@@ -21,17 +20,13 @@ class TrainingCallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs):
         wandb.log({**logs, "epoch": epoch}, commit=False)
         if epoch == self.trainable_transition_epoch:
-            print("#######################################")
-            print("Freezing feature extractor layer & training rest of model")
+            print("######## FREEZING ########")
             self.model.trainable = True
-            self.model.freeze_feature_extractor()
+            for i in range(len(self.model.layers[0].layers) - 2):
+                self.model.layers[0].layers[i].trainable = False
+                print(self.model.layers[0].layers[i])
             self.model.summary()
             print("#######################################")
-
-    def on_train_end(self, logs):
-        print("########## TRAINING FINISHED ##########")
-        print("Final LOGGING:\n", logs)
-        print("#######################################")
 
 
 def fetch_callbacks(args):

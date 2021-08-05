@@ -208,15 +208,15 @@ def main(args):
     # NOTE: here we are using `batch_size_per_device` instead of `global_batch_size`
     # since loss will be calculated over each microbatch & will get summed
 
-    # saving model in saved-model to load it later on TPUs
-    saved_model_path = f"{os.path.split(args.model_id)[-1]}-saved-model"
+    # saving model in saved-model to load it later on TPUs from GCS
+    saved_model_path = f"gs://{CKPT_BUCKET_NAME}/tmp-pretrained-model"
     model = Wav2Vec2Model.from_pretrained(
         args.model_id,
-        input_shape=(1, 50000),
+        input_shape=(1, args.audio_maxlen),
         apply_spec_augment=args.apply_spec_augment,
         survival_prob=args.survival_prob,
     )
-    input_signature = [tf.TensorSpec(model_input_shape, tf.float32, name="speech")]
+    input_signature = [tf.TensorSpec((None, args.audio_maxlen), tf.float32, name="speech")]
     model.__call__ = tf.function(model.__call__, input_signature=input_signature)
     model.save(saved_model_path)
 

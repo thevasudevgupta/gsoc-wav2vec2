@@ -118,10 +118,11 @@ class TrainingArgs:
                 self.train_tfrecords = self.val_tfrecords = self.test_tfrecords = None
 
 
-def build_model(saved_model_path, args, model_config, model_input_shape, division_factor):
-    model = Wav2Vec2ForCTC(Wav2Vec2Config(apply_spec_augment=args.apply_spec_augment, survival_prob=args.survival_prob))
-    model.predict(tf.random.uniform(1, args.audio_maxlen))
-    model.load_weights(saved_model_path)
+def build_model(args, model_input_shape, division_factor):
+    model_config = Wav2Vec2Config(apply_spec_augment=args.apply_spec_augment, survival_prob=args.survival_prob)
+    model = Wav2Vec2ForCTC(model_config, input_shape=(1, args.audio_maxlen))
+    print(f"loading model from {args.model_id}")
+    model.load_weights(f"{args.model_id}/tf_model")
 
     print(model.summary())
     print("######## FREEZING ########")
@@ -211,9 +212,9 @@ def main(args):
     print("######### Preparing model #########")
     if strategy is not None:
         with strategy.scope():
-            model = build_model(saved_model_path, args, model.config, model_input_shape, global_batch_size)
+            model = build_model(args, model_input_shape, global_batch_size)
     else:
-        model = build_model(saved_model_path, args, model.config, model_input_shape, global_batch_size)
+        model = build_model(args, model_input_shape, global_batch_size)
 
     print("######### Training #########")
     try:

@@ -49,7 +49,7 @@ def fetch_callbacks(args):
         save_weights_only=True,
         monitor="val_loss",
         mode="min",
-        save_best_only=False,
+        save_best_only=True,
         save_freq="epoch",
     )
 

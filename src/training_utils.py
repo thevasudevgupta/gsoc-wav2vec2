@@ -20,8 +20,9 @@ class TrainingCallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs):
         wandb.log({**logs, "epoch": epoch}, commit=False)
         if epoch == self.trainable_transition_epoch:
-            print("######## FREEZING ########")
             self.model.trainable = True
+            self.model.summary()
+            print("######## FREEZING ########")
             for i in range(len(self.model.layers[0].layers) - 2):
                 self.model.layers[0].layers[i].trainable = False
                 print(self.model.layers[0].layers[i])

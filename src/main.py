@@ -31,19 +31,19 @@ DUMMY_DATA_PATH = os.getenv("DUMMY_DATA_PATH", "none")
 class TrainingArgs:
 
     # main hparams
-    lr1: float = 1e-4
-    lr2: float = 2e-5
-    lr3: float = 4e-5
-    transition_epoch1: int = 10
-    transition_epoch2: int = 20
+    lr1: float = 1e-3
+    lr2: float = 1e-4
+    lr3: float = 7e-5
+    transition_epoch1: int = 15
+    transition_epoch2: int = 25
     max_epochs: int = 30
     batch_size_per_device: int = 64
 
     logging_steps: int = 16
-    trainable_transition_epoch: int = 10
+    trainable_transition_epoch: int = 15
 
     # regularization
-    apply_spec_augment: bool = False
+    apply_spec_augment: bool = True
     survival_prob: float = 1
 
     # try to keep everything multiple of 128 on TPUs
@@ -124,7 +124,7 @@ def build_model(args, model_input_shape, division_factor):
     print(f"loading model from {args.model_id}")
     model.load_weights(f"{args.model_id}/tf_model")
 
-    print(model.summary())
+    model.summary()
     print("######## FREEZING ########")
     if args.trainable_transition_epoch > 0:
         # till `trainable_transition_epoch`, we will train only `lm_head`
@@ -145,6 +145,8 @@ def build_model(args, model_input_shape, division_factor):
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr1)
     model.compile(optimizer=optimizer, loss=loss_fn)
+
+    model.summary()
     return model
 
 

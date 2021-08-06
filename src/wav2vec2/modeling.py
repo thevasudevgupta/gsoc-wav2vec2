@@ -36,7 +36,7 @@ class TFKerasModel(tf.keras.Model):
 
     @classmethod
     def from_pretrained(
-        cls, model_id, jit_compile=None, from_gcs=False, **config_kwargs
+        cls, model_id, jit_compile=None, **config_kwargs
     ) -> tf.keras.Model:
         """
         This will load model weights from the dictionary specified or download it from HuggingFace Hub
@@ -53,7 +53,7 @@ class TFKerasModel(tf.keras.Model):
         """
 
         save_dir = model_id
-        if not os.path.isdir(save_dir) and not from_gcs:
+        if not os.path.isdir(save_dir):
             os.makedirs(save_dir, exist_ok=True)
             config_url = f"wget https://huggingface.co/{model_id}/resolve/main/config.json -P {save_dir}"
             model_url = f"wget https://huggingface.co/{model_id}/resolve/main/tf_model.h5 -P {save_dir}"
@@ -70,8 +70,6 @@ class TFKerasModel(tf.keras.Model):
                     f"Couldn't download model weights from https://huggingface.co/{model_id}"
                 )
             print("Done")
-        elif from_gcs:
-            pass
         else:
             print(f"Loading weights locally from `{save_dir}`")
 

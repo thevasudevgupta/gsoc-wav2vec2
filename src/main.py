@@ -18,7 +18,7 @@ import wandb
 import numpy as np
 from data_utils import LibriSpeechDataLoader, LibriSpeechDataLoaderArgs
 from training_utils import fetch_callbacks, is_gpu_available, is_tpu_available
-from wav2vec2 import CTCLoss, Wav2Vec2Model
+from wav2vec2 import CTCLoss, Wav2Vec2ForCTC, Wav2Vec2Config
 
 
 TPU_NAME = os.getenv("TPU_NAME", "none")
@@ -78,7 +78,7 @@ class TrainingArgs:
     val_dir: str = "../data/LibriSpeech/test-clean/"
     test_dir: str = "../data/LibriSpeech/test-clean/"
 
-    model_id: str = "vasudevgupta/gsoc-wav2vec2"
+    model_id: str = "gs://gsoc-weights/tf-wav2vec2-base"
     ckpt_path: str = f"gs://{CKPT_BUCKET_NAME}/experiment"
 
     # wandb args
@@ -119,11 +119,11 @@ class TrainingArgs:
 
 
 def build_model(saved_model_path, args, model_config, model_input_shape, division_factor):
-    model = tf.keras.Sequential([
-        tf.keras.models.load_model(saved_model_path),
-        tf.keras.layers.Dense(model_config.vocab_size, name="lm_head"),
-    ])
+    model = Wav2Vec2ForCTC(Wav2Vec2Config(apply_spec_augment=args.apply_spec_augment, survival_prob=args.survival_prob))
+    model.predict(tf.random.uniform(1, args.audio_maxlen))
+    model.load_weights(saved_model_path)
 
+    print(model.summary())
     print("######## FREEZING ########")
     if args.trainable_transition_epoch > 0:
         # till `trainable_transition_epoch`, we will train only `lm_head`
@@ -207,18 +207,6 @@ def main(args):
     model_input_shape = (args.batch_size_per_device, args.audio_maxlen)
     # NOTE: here we are using `batch_size_per_device` instead of `global_batch_size`
     # since loss will be calculated over each microbatch & will get summed
-
-    # saving model in saved-model to load it later on TPUs from GCS
-    saved_model_path = f"gs://{CKPT_BUCKET_NAME}/tmp-pretrained-model"
-    model = Wav2Vec2Model.from_pretrained(
-        args.model_id,
-        input_shape=(1, args.audio_maxlen),
-        apply_spec_augment=args.apply_spec_augment,
-        survival_prob=args.survival_prob,
-    )
-    input_signature = [tf.TensorSpec((None, args.audio_maxlen), tf.float32, name="speech")]
-    model.__call__ = tf.function(model.__call__, input_signature=input_signature)
-    model.save(saved_model_path)
 
     print("######### Preparing model #########")
     if strategy is not None:

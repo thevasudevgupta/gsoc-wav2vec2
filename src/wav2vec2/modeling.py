@@ -35,9 +35,7 @@ class TFKerasModel(tf.keras.Model):
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
     @classmethod
-    def from_pretrained(
-        cls, model_id, jit_compile=None, **config_kwargs
-    ) -> tf.keras.Model:
+    def from_pretrained(cls, model_id, **config_kwargs) -> tf.keras.Model:
         """
         This will load model weights from the dictionary specified or download it from HuggingFace Hub
         if weights are not available locally.
@@ -76,10 +74,7 @@ class TFKerasModel(tf.keras.Model):
         input_shape = config_kwargs.pop("input_shape", (1, 2048))
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
         config = replace(config, **config_kwargs)
-        if isinstance(cls, Wav2Vec2ForCTC):
-            model = cls(config, jit_compile=jit_compile, input_shape=input_shape)
-        else:
-            model = cls(config, input_shape=input_shape)
+        model = cls(config, input_shape=input_shape)
         model.load_weights(os.path.join(save_dir, "tf_model.h5"))
         print("Total number of loaded variables:", len(model.variables))
         return model
@@ -90,11 +85,15 @@ class TFKerasModel(tf.keras.Model):
         if input_shape is None:
             input_shape = (1, 2048)
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
-        return self.predict(dummy_input)
-
+        try:
+            # this operation doesn't work on CPU
+            self.predict(dummy_input)
+        except:
+            # this operation will hang the TPU VM, hence prefer `.predict`
+            self(dummy_input)
 
 class Wav2Vec2Model(TFKerasModel):
-    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 50000), name="wav2vec2"):
+    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 246000), name="wav2vec2"):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
@@ -190,7 +189,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with a CTC head."""
 
     def __init__(
-        self, config: Wav2Vec2Config, input_shape=(1, 50000), name="wav2vec2-ctc"
+        self, config: Wav2Vec2Config, input_shape=(1, 246000), name="wav2vec2-ctc"
     ):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):

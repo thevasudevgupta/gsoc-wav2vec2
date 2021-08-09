@@ -29,18 +29,17 @@ DUMMY_DATA_PATH = os.getenv("DUMMY_DATA_PATH", "none")
 
 @dataclass
 class TrainingArgs:
-
     # main hparams
-    lr1: float = 1e-3
-    lr2: float = 1e-4
-    lr3: float = 7e-5
-    transition_epoch1: int = 15
-    transition_epoch2: int = 25
-    max_epochs: int = 30
-    batch_size_per_device: int = 64
+    stage1_lr: float = 1e-3
+    stage1_epochs: int = 15
 
+    stage2_lr1: float = 1e-4
+    stage2_transition_epochs: int = 25
+    stage2_lr2: float = 7e-5
+    stage2_epochs: int = 30
+
+    batch_size_per_device: int = 64
     logging_steps: int = 16
-    trainable_transition_epoch: int = 15
 
     # regularization
     apply_spec_augment: bool = True
@@ -118,35 +117,11 @@ class TrainingArgs:
                 self.train_tfrecords = self.val_tfrecords = self.test_tfrecords = None
 
 
-def build_model(args, model_input_shape, division_factor):
+def build_model(args):
     model_config = Wav2Vec2Config(apply_spec_augment=args.apply_spec_augment, survival_prob=args.survival_prob)
     model = Wav2Vec2ForCTC(model_config, input_shape=(1, args.audio_maxlen))
     print(f"loading model from {args.model_id}")
     model.load_weights(f"{args.model_id}/tf_model")
-
-    model.summary()
-    print("######## FREEZING ########")
-    if args.trainable_transition_epoch > 0:
-        # till `trainable_transition_epoch`, we will train only `lm_head`
-        model.layers[0].trainable = False
-        print(model.layers[0])
-    else:
-        # during fine-tuning, it's recommended to freeze the feature extraction layer from the pre-trained weights
-        for i in range(len(model.layers[0].layers) - 2):
-            model.layers[0].layers[i].trainable = False
-            print(model.layers[0].layers[i])
-    print("#########################")
-
-    # `division_factor` should be passed else loss will be summed
-    # it will help us in distributed training over several processes
-    loss_fn = CTCLoss(
-        model_config, model_input_shape, division_factor=division_factor
-    )
-
-    optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr1)
-    model.compile(optimizer=optimizer, loss=loss_fn)
-
-    model.summary()
     return model
 
 
@@ -203,33 +178,75 @@ def main(args):
     test_dataset = LibriSpeechDataLoader(test_data_args)
     test_dataset = test_dataset(seed=None, drop_remainder=True)
 
-    print("######### Initializing training state #########")
-
     # `CTCLoss` needs to know raw-speech input shape in advance
     # Hence, defining it here
     model_input_shape = (args.batch_size_per_device, args.audio_maxlen)
     # NOTE: here we are using `batch_size_per_device` instead of `global_batch_size`
     # since loss will be calculated over each microbatch & will get summed
 
-    print("######### Preparing model #########")
-    if strategy is not None:
-        with strategy.scope():
-            model = build_model(args, model_input_shape, global_batch_size)
-    else:
-        model = build_model(args, model_input_shape, global_batch_size)
+    with strategy.scope():
+        print("######### Preparing model #########")
+        model = build_model(args)
 
-    print("######### Training #########")
-    try:
-        history = model.fit(
-            tr_dataset,
-            validation_data=val_dataset,
-            epochs=args.max_epochs,
-            callbacks=fetch_callbacks(args),
-            verbose="auto",
+        # `division_factor` should be passed else loss will be summed
+        # it will help us in distributed training over several processes
+        loss = CTCLoss(
+            model.config, model_input_shape, division_factor=global_batch_size
         )
-        print(history.history)
-    except KeyboardInterrupt:
-        print("Interrupting through KEYBOARD")
+
+        ######################### STAGE-1 #########################
+
+        print("######## FREEZING ########")
+        # till `stage1_epochs`, we will train only `lm_head`
+        model.layers[0].trainable = False
+        print(model.layers[0])
+        print("#########################")
+        model.summary()
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.stage1_lr)
+        model.compile(optimizer=optimizer, loss=loss)
+
+        try:
+            history = model.fit(
+                tr_dataset,
+                validation_data=val_dataset,
+                epochs=args.stage1_epochs,
+                callbacks=fetch_callbacks(args, is_stage2=False),
+                verbose="auto",
+            )
+            print(history.history)
+        except KeyboardInterrupt:
+            print("Interrupting through KEYBOARD")
+
+        ###########################################################
+
+        ######################### STAGE-2 #########################
+        # during fine-tuning, it's recommended to freeze the feature extraction layer from the pre-trained weights
+
+        model.trainable = True
+        print("############## FREEZING ##############")
+        for i in range(len(model.layers[0].layers) - 2):
+            model.layers[0].layers[i].trainable = False
+            print(model.layers[0].layers[i])
+        print("#######################################")
+        model.summary()
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.stage2_lr1)
+        model.compile(optimizer=optimizer, loss=loss)
+
+        try:
+            history = model.fit(
+                tr_dataset,
+                validation_data=val_dataset,
+                epochs=args.stage2_epochs,
+                callbacks=fetch_callbacks(args, is_stage2=True),
+                verbose="auto",
+            )
+            print(history.history)
+        except KeyboardInterrupt:
+            print("Interrupting through KEYBOARD")
+
+        ###########################################################
 
     print("\n######### Running evaluation #########")
     results = model.evaluate(test_dataset, return_dict=True)
@@ -241,7 +258,7 @@ if __name__ == "__main__":
     # setting up args for training (supports wandb sweep for distributed hparams tuning)
     args = TrainingArgs()
     wandb.init(project=args.project_name, config=asdict(args))
-    args.ckpt_path = os.path.join(args.ckpt_path + f"-{wandb.run.id}", "saved-model")
+    args.ckpt_path = os.path.join(args.ckpt_path + f"-{wandb.run.id}", "tf_model")
 
     # setting up seed for reproducible runs
     tf.random.set_seed(args.seed)

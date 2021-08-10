@@ -9,14 +9,14 @@ The repository comes with shiny Colab Notebooks. Below you can find a list of th
 | Notebook | Description |
 |------------|-------------|
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_saved_model_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook gives you a template to fine-tune a pre-trained Wav2Vec2 SavedModel |
-| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_onnx.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates conversion of Wav2Vec2 model into ONNX and compares ONNX exported model latency with the TF model on CPU |
+| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_onnx.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates conversion of Wav2Vec2 model to ONNX model and compares the latency of ONNX exported model & TF model on CPU |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 evaluation (without any padding) on LibriSpeech data |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_saved_model_evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 SavedModel evaluation (with constant padding upto 246000 length) on LibriSpeech data |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2-inference.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook shows a small demo of how to use Wav2Vec2 for inference for ASR task |
 
 ## Checkpoints
 
-The original model checkpoints are provided in PyTorch. But you can find the equivalent TensorFlow `SavedModel` on [TensorFlow Hub](https://tfhub.dev/vasudevgupta7/wav2vec2/1). Below is a summary.
+The original model checkpoints are provided in PyTorch. But you can find the equivalent TensorFlow `SavedModel` on [TensorFlow Hub](https://tfhub.dev/vasudevgupta7/wav2vec2/1). Below is a summary:
 
 | Checkpoint | TF `SavedModel` | Description |
 |------------|-------------|-------------|
@@ -50,25 +50,30 @@ python3 make_tfrecords.py \
 --data_dir <source-directory> \
 -d <target-directory> \
 -n <no-of-tfrecords-shards>
+```
 
-# after successful completion of above command, transfer dataset into GCS bucket like this:
-gsutil cp -r <target-directory> gs://<GCS-bucket-name>
+```shell
+# create a GCS bucket
+gsutil mb -l <BUCKET-LOCATION> gs://<GCS-BUCKET-NAME>
+
+# transfer tfrecords to GCS bucket
+gsutil cp -r <target-directory> gs://<GCS-BUCKET-NAME>
 ```
 
 ### Model training
 
-The following command will fine-tune wav2vec2 model on single/multiple GPUs:
+The following command will fine-tune wav2vec2 model on single/multiple GPUs or Colab/Kaggle TPUs:
 
 ```shell
 python3 main.py
 ```
 
-For training on Cloud/Colab TPUs, run the following command:
+For training on Cloud TPUs, run the following command:
 
 ```shell
-# export `ON_TPU` env variable first
-# this flag will ensure that your VM connects to TPUs & TPUs become visible to TensorFlow
-ON_TPU=true python3 main.py
+# export `TPU_NAME` env variable first
+# this flag will ensure that your VM connects to the specified TPUs & TPUs become visible to TensorFlow
+TPU_NAME=<tpu-name> python3 main.py
 ```
 
 ### Running tests

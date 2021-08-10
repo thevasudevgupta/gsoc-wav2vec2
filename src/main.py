@@ -34,11 +34,11 @@ class TrainingArgs:
     stage1_epochs: int = 15
 
     stage2_lr1: float = 1e-4
-    stage2_transition_epochs: int = 25
-    stage2_lr2: float = 7e-5
-    stage2_epochs: int = 30
+    stage2_transition_epochs: int = 10
+    stage2_lr2: float = 5e-5
+    stage2_epochs: int = 15
 
-    batch_size_per_device: int = 64
+    batch_size_per_device: int = 32
     logging_steps: int = 16
 
     # regularization
@@ -54,19 +54,22 @@ class TrainingArgs:
     from_tfrecords: bool = True
 
     train_tfrecords: List[str] = field(
+        repr=False,
         default_factory=lambda: [
             f"gs://{DATA_BUCKET_NAME}/train-clean-100/",
-            # f"gs://{DATA_BUCKET_NAME}/train-clean-360/",
-            # f"gs://{DATA_BUCKET_NAME}/train-other-500/",
+            f"gs://{DATA_BUCKET_NAME}/train-clean-360/",
+            f"gs://{DATA_BUCKET_NAME}/train-other-500/",
         ]
     )
     val_tfrecords: List[str] = field(
+        repr=False,
         default_factory=lambda: [
             f"gs://{DATA_BUCKET_NAME}/dev-clean/",
             # f"gs://{DATA_BUCKET_NAME}/dev-other/",
         ]
     )
     test_tfrecords: List[str] = field(
+        repr=False,
         default_factory=lambda: [
             f"gs://{DATA_BUCKET_NAME}/test-clean/",
             # f"gs://{DATA_BUCKET_NAME}/test-other/",
@@ -82,7 +85,6 @@ class TrainingArgs:
 
     # wandb args
     project_name: str = "gsoc-wav2vec2"
-    run_name: str = "finetuning"
 
     def __post_init__(self):
 

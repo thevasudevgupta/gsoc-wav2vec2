@@ -2,11 +2,12 @@ import unittest
 from functools import partial
 
 import tensorflow as tf
+import tensorflow_hub as hub
 
 import numpy as np
 from convert_torch_to_tf import get_tf_pretrained_model
 from utils import is_torch_available, is_transformers_available, requires_lib
-from wav2vec2 import CTCLoss, Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Processor
+from wav2vec2 import CTCLoss, Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Processor, Wav2Vec2Model
 from wav2vec2.tensorflow_addons import Conv1DWithWeightNorm
 
 
@@ -19,7 +20,7 @@ if is_transformers_available():
     from transformers import Wav2Vec2FeatureExtractor as HFWav2Vec2FeatureExtractor
     from transformers import Wav2Vec2ForCTC as HFWav2Vec2ForCTC
 
-MODEL_ID = "vasudevgupta/tf-wav2vec2-base-960h"
+MODEL_ID = "vasudevgupta/gsoc-wav2vec2-960h"
 HF_MODEL_ID = "facebook/wav2vec2-base-960h"
 HF_MODEL_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base"]
 SEED = 0
@@ -247,3 +248,29 @@ class Wav2Vec2Tester(unittest.TestCase):
         assert np.allclose(
             torch_out, tf_out, atol=1e-4
         ), f"Difference: {torch_out} vs {tf_out}"
+
+
+class TFhubTester(unittest.TestCase):
+    def _get_batch(self):
+        tf.random.set_seed(SEED)
+        batch = tf.random.normal((2, 246000))
+        return batch
+
+    def _test_hub_model(self, hub_id, tf_model):
+        batch = self._get_batch()
+        tfhub_model = hub.KerasLayer(hub_id, trainable=False)
+        tfhub_out = tf.function(tfhub_model, jit_compile=True)(batch).numpy()
+        out = tf_model(batch).numpy()
+        assert np.allclose(tfhub_out, out, atol=1e-3), f"Difference: {tfhub_out} vs {out}"
+
+    def test_wav2vec2_base(self):
+        hub_id = "https://tfhub.dev/vasudevgupta7/wav2vec2/1"
+        tf_model = Wav2Vec2Model.from_pretrained("vasudevgupta/gsoc-wav2vec2")
+        self._test_hub_model(hub_id, tf_model)
+
+    def test_wav2vec2_base_960h(self):
+        # TODO: change hub_id after model is exported to TFHub
+        hub_id = "saved-model"
+        # hub_id = "https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1"
+        tf_model = Wav2Vec2ForCTC.from_pretrained("vasudevgupta/gsoc-wav2vec2-960h")
+        self._test_hub_model(hub_id, tf_model)

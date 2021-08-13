@@ -1,6 +1,8 @@
-# Wav2Vec2 (GSoC'21)
+![GSoC](assets/gsoc.png)
 
-This repository presents an implementation of the **Wav2Vec2** model [1] in **TensorFlow 2.0** as a part of [**GSoC'21**](https://summerofcode.withgoogle.com/) project.
+This repository presents an implementation of the **Wav2Vec2** model [1] in **TensorFlow 2.0** as a part of [**Google Summer of Code**](https://summerofcode.withgoogle.com/).
+
+For a quick demo of the project, checkout this: https://huggingface.co/spaces/vasudevgupta/GOOGLE_SUMMER_OF_CODE
 
 ## Notebooks
 
@@ -22,8 +24,9 @@ The original model checkpoints are provided in PyTorch. But you can find the equ
 |------------|-------------|-------------|
 | [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
 | [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [🤗Hub](https://hf.co/vasudevgupta/finetuned-wav2vec2-960h) | - | This checkpoint is obtained by fine-tuning Wav2Vec2 model on 960h of LibriSpeech dataset during my GSoC tenure. You can reproduce training by running [`main.py`](src/main.py) on TPU v3-8 |
 
-To know about how to run the conversion process for obtaining the TensorFlow `SavedModel` keep reading. 
+To know about how we obtained above checkpoints, keep reading. 
 
 ## Using this Repository
 
@@ -86,11 +89,10 @@ pip3 install torch transformers
 pytest -sv tests
 ```
 
-## Mentors
+## Acknowledgement
 
-* [Sayak Paul](https://github.com/sayakpaul)
-* [Morgan Roff](https://github.com/MorganR)
-* [Jaeyoun Kim](https://github.com/jaeyounkim)
+* [Sayak Paul](https://github.com/sayakpaul), [Morgan Roff](https://github.com/MorganR), [Jaeyoun Kim](https://github.com/jaeyounkim) for guiding & mentoring me throughout the project.
+* [TensorFlow team](https://www.tensorflow.org) & [TRC](https://sites.research.google/trc/) for providing access to TPUs during my GSoC tenure.
 
 ## References
 

@@ -5,7 +5,7 @@ EXAMPLE:
     >>> TPU_NAME=gsoc-project python3 main.py
 
     >>> # for running dummy training on TPUs
-    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech/dev-clean/dev-clean-0.tfrecord TPU_NAME=gsoc-project python3 main.py
+    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech-us/dev-clean/dev-clean-0.tfrecord TPU_NAME=gsoc-project python3 main.py
 """
 
 import os
@@ -53,6 +53,10 @@ class TrainingArgs:
     seed: int = 42
     from_tfrecords: bool = True
 
+    # For training, we converted complete data into multiple tfrecords
+    # these tfrecords are further stored in `DATA_BUCKET_NAME`
+    # note tfrecords from different splits are stored in different directories in same bucket
+    # for more information on data prepartion, please checkout `readme.md`
     train_tfrecords: List[str] = field(
         repr=False,
         default_factory=lambda: [
@@ -61,6 +65,7 @@ class TrainingArgs:
             f"gs://{DATA_BUCKET_NAME}/train-other-500/",
         ]
     )
+    # similarly dev data is stored in dev-clean & dev-other directory in same bucket
     val_tfrecords: List[str] = field(
         repr=False,
         default_factory=lambda: [
@@ -68,6 +73,7 @@ class TrainingArgs:
             # f"gs://{DATA_BUCKET_NAME}/dev-other/",
         ]
     )
+    # similarly test data is stored in test-clean & test-other directory in same bucket
     test_tfrecords: List[str] = field(
         repr=False,
         default_factory=lambda: [
@@ -145,12 +151,9 @@ def main(args):
         strategy = tf.distribute.MirroredStrategy()
     else:
         print("All devices: ", tf.config.list_logical_devices("CPU"))
-        strategy = None
+        raise NotImplementedError
 
-    if strategy is not None:
-        global_batch_size = strategy.num_replicas_in_sync * args.batch_size_per_device
-    else:
-        global_batch_size = args.batch_size_per_device
+    global_batch_size = strategy.num_replicas_in_sync * args.batch_size_per_device
     print("Training with global batch size of", global_batch_size)
     print(args, end="\n\n")
 
@@ -196,13 +199,15 @@ def main(args):
             model.config, model_input_shape, division_factor=global_batch_size
         )
 
-        ######################### STAGE-1 #########################
+        # training is divided into 2 stages, hence we will compile model twice & call .fit(...) twice
 
-        print("######## FREEZING ########")
+        print("######################### STAGE-1 #########################")
+        # for 1st stage, we will just train the LM head (i.e. top most dense layer) untill the convergence
+        # this will ensure pre-trained weights don't get penalized because of randomly initialized LM head
+
+        print("######## FREEZING THE BACKBONE (i.e all pretrained weights) ########")
         # till `stage1_epochs`, we will train only `lm_head`
         model.layers[0].trainable = False
-        print(model.layers[0])
-        print("#########################")
         model.summary()
 
         optimizer = tf.keras.optimizers.Adam(learning_rate=args.stage1_lr)
@@ -220,17 +225,16 @@ def main(args):
         except KeyboardInterrupt:
             print("Interrupting through KEYBOARD")
 
-        ###########################################################
+        print("###########################################################")
 
-        ######################### STAGE-2 #########################
-        # during fine-tuning, it's recommended to freeze the feature extraction layer from the pre-trained weights
+        print("######################### STAGE-2 #########################")
+        # In 2nd stage, we will fine-tune the complete model except the feature extraction layers
+        # It's recommended to freeze all the feature extraction layers during fine-tuning stage
 
         model.trainable = True
-        print("############## FREEZING ##############")
+        print("############## FREEZING THE FEATURE_EXTRACTION LAYERS ##############")
         for i in range(len(model.layers[0].layers) - 2):
             model.layers[0].layers[i].trainable = False
-            print(model.layers[0].layers[i])
-        print("#######################################")
         model.summary()
 
         optimizer = tf.keras.optimizers.Adam(learning_rate=args.stage2_lr1)
@@ -248,7 +252,7 @@ def main(args):
         except KeyboardInterrupt:
             print("Interrupting through KEYBOARD")
 
-        ###########################################################
+        print("###########################################################")
 
     print("\n######### Running evaluation #########")
     results = model.evaluate(test_dataset, return_dict=True)

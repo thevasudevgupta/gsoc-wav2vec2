@@ -3,6 +3,7 @@
 workspace.code-workspace
 *.tfrecord
 *.tflite
+*.onnx
 
 wav2vec2.egg-info/
 __pycache__/

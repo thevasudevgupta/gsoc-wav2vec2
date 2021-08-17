@@ -12,21 +12,21 @@ The repository comes with shiny Colab Notebooks. Below you can find a list of th
 |------------|-------------|
 | <a href="https://colab.research.google.com/github/tensorflow/hub/blob/master/examples/colab/wav2vec2_saved_model_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook gives you a template to fine-tune a pre-trained Wav2Vec2 SavedModel |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_onnx.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates conversion of TF Wav2Vec2 model to ONNX and compares the latency of ONNX exported model & TF model on CPU |
-| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 evaluation (without any padding) on LibriSpeech data |
-| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_saved_model_evaluation.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 SavedModel evaluation (with constant padding upto 246000 length) on LibriSpeech data |
+| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_evaluation_WER_3.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 evaluation (without any padding) on LibriSpeech data |
+| <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_evaluation_WER_6.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 SavedModel evaluation (with constant padding upto 246000 length) on LibriSpeech data |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2-inference.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook shows a small demo of how to use Wav2Vec2 for inference for ASR task |
 
 ## Checkpoints
 
-The original model checkpoints are provided in PyTorch. But you can find the equivalent TensorFlow `SavedModel` on [TensorFlow Hub](https://tfhub.dev/vasudevgupta7/wav2vec2/1). Below is a summary:
+Below is a summary of checkpoints obtained during the project:
 
 | Checkpoint | TF `SavedModel` | Description |
 |------------|-------------|-------------|
-| [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
-| [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](https://hf.co/facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](https://hf.co/facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
 | [🤗Hub](https://hf.co/vasudevgupta/finetuned-wav2vec2-960h) | - | This checkpoint is obtained by fine-tuning Wav2Vec2 model on 960h of LibriSpeech dataset during my GSoC tenure. You can reproduce training by running [`main.py`](src/main.py) on TPU v3-8 |
 
-To know about how we obtained the above checkpoints, please checkout [this section](##-Reproducing-this-project).
+To know more about the process of obtaining first two checkpoints, please checkout [this section](#running-conversion-script) and to know about the process of obtaining the last checkpoint, please checkout [this section](#reproducing-this-project).
 
 ## Using this Repository
 
@@ -126,6 +126,16 @@ For training on Cloud TPUs, run the following command:
 # export `TPU_NAME` environment variable first
 # this flag will ensure that your VM connects to the specified TPUs & TPUs become visible to TensorFlow
 TPU_NAME=<tpu-name> python3 main.py
+```
+
+## Running Conversion script
+
+Original PyTorch checkpoints (from facebook) can be converted using the conversion script avialable in this repositary.
+
+```shell
+python3 convert_torch_to_tf.py \
+--hf_model_id facebook/wav2vec2-base \    # HuggingFace Hub ID of the model you want to convert
+--with_lm_head                            # Whether to use `Wav2Vec2ForCTC` or `Wav2Vec2Model` from this repositary
 ```
 
 ## Running tests

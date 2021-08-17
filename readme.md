@@ -99,12 +99,12 @@ gsutil cp -r ${DATA_SPLIT} gs://<DATA_BUCKET_NAME>/${DATA_SPLIT}
 
 Now your GCS bucket (`DATA_BUCKET_NAME`) should look like this:
 
- .
- |- ${DATA_SPLIT}
- |- ${DATA_SPLIT}-0.tfrecord
- |- ${DATA_SPLIT}-1.tfrecord
- .
- .
+    .
+    |- ${DATA_SPLIT}
+        |- ${DATA_SPLIT}-0.tfrecord
+        |- ${DATA_SPLIT}-1.tfrecord
+        .
+        .
 
 Follow the above steps for all other data splits. You just need to change the `DATA_SPLIT` environment variable.
 

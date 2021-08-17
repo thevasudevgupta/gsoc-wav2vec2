@@ -2,12 +2,12 @@ import unittest
 from functools import partial
 
 import tensorflow as tf
-import tensorflow_hub as hub
 
 import numpy as np
+import tensorflow_hub as hub
 from convert_torch_to_tf import get_tf_pretrained_model
 from utils import is_torch_available, is_transformers_available, requires_lib
-from wav2vec2 import CTCLoss, Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Processor, Wav2Vec2Model
+from wav2vec2 import CTCLoss, Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Model, Wav2Vec2Processor
 from wav2vec2.tensorflow_addons import Conv1DWithWeightNorm
 
 

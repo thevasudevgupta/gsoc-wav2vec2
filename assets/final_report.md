@@ -1,5 +1,5 @@
 
-# GSoC 2021 @ TensorFlow : Final Report
+# Final Report
 
 ## Objectives
 
@@ -32,10 +32,10 @@ Here is the list of commits/PR made by me during GSoC'21:
 
 | Description | Repository | Link |
 |-------------|------------|------|
-| Implement & train Wav2Vec2 model in TensorFlow | [vasudevgupta7/gsoc-wav2vec2](https://github.com/vasudevgupta7/gsoc-wav2vec2) | [commits](https://github.com/vasudevgupta7/gsoc-wav2vec2/commits?author=vasudevgupta7) |
-| Export fine-tuned Wav2Vec2 model to TFHub | [tensorflow/tfhub.dev](https://github.com/tensorflow/tfhub.dev) | [#68](https://github.com/tensorflow/tfhub.dev/pull/68) |
-| Export pre-trained Wav2Vec2 model to TFHub | [tensorflow/tfhub.dev](https://github.com/tensorflow/tfhub.dev) | [#65](https://github.com/tensorflow/tfhub.dev/pull/65) |
-| Add notebook for demonstrating Wav2Vec2 fine-tuning | [tensorflow/hub](https://github.com/tensorflow/hub) | [#788](https://github.com/tensorflow/hub/pull/788) |
+| Implement & train Wav2Vec2 model in TensorFlow | [`vasudevgupta7/gsoc-wav2vec2`](https://github.com/vasudevgupta7/gsoc-wav2vec2) | [`Commits`](https://github.com/vasudevgupta7/gsoc-wav2vec2/commits?author=vasudevgupta7) |
+| Export fine-tuned Wav2Vec2 model to TFHub | [`tensorflow/tfhub.dev`](https://github.com/tensorflow/tfhub.dev) | [`#68`](https://github.com/tensorflow/tfhub.dev/pull/68) |
+| Export pre-trained Wav2Vec2 model to TFHub | [`tensorflow/tfhub.dev`](https://github.com/tensorflow/tfhub.dev) | [`#65`](https://github.com/tensorflow/tfhub.dev/pull/65) |
+| Add notebook for demonstrating Wav2Vec2 fine-tuning | [`tensorflow/hub`](https://github.com/tensorflow/hub) | [`#788`](https://github.com/tensorflow/hub/pull/788) |
 
 ## Notebooks
 
@@ -53,8 +53,8 @@ The following table summarizes the notebooks, I made during my GSoC tenure:
 
 | Checkpoint | WER (with no padding) | WER with constant padding to 246000 |
 |-------------|------------------------|-------------------------------------|
-| [vasudevgupta/gsoc-wav2vec2-960h](https://huggingface.co/vasudevgupta/gsoc-wav2vec2-960h) | 3% | 6% | 
-| [vasudevgupta/finetuned-wav2vec2-960h](https://huggingface.co/vasudevgupta/finetuned-wav2vec2-960h) | 5.6% | 6.7% |
+| [`vasudevgupta/gsoc-wav2vec2-960h`](https://huggingface.co/vasudevgupta/gsoc-wav2vec2-960h) | 3% | 6% | 
+| [`vasudevgupta/finetuned-wav2vec2-960h`](https://huggingface.co/vasudevgupta/finetuned-wav2vec2-960h) | 5.6% | 6.7% |
 
 ## Latency Comparison
 

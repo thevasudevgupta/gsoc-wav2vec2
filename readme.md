@@ -2,13 +2,13 @@
 
 This repository presents an implementation of the **Wav2Vec2** model [1] in **TensorFlow 2.0** as a part of [**Google Summer of Code**](https://summerofcode.withgoogle.com/).
 
-For a quick demo of the project, check out this: https://huggingface.co/spaces/vasudevgupta/GOOGLE_SUMMER_OF_CODE
+For a quick demo, please check out [this](https://hf.co/spaces/vasudevgupta/GOOGLE_SUMMER_OF_CODE). Final report of the project can be found [here](https://vasudevgupta7.github.io/gsoc-wav2vec2/assets/final_report).
 
 ## Notebooks
 
 The repository comes with shiny Colab Notebooks. Below you can find a list of them. Spin them up and don't forget to have fun!
 
-| Notebook   | Description |
+| Notebook | Description |
 |------------|-------------|
 | <a href="https://colab.research.google.com/github/tensorflow/hub/blob/master/examples/colab/wav2vec2_saved_model_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook gives you a template to fine-tune a pre-trained Wav2Vec2 SavedModel |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_onnx.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates conversion of TF Wav2Vec2 model to ONNX and compares the latency of ONNX exported model & TF model on CPU |
@@ -22,11 +22,11 @@ Below is a summary of checkpoints obtained during the project:
 
 | Checkpoint | TF `SavedModel` | Description |
 |------------|-------------|-------------|
-| [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](https://hf.co/facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
-| [🤗Hub](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [TFHub](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](https://hf.co/facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
-| [🤗Hub](https://hf.co/vasudevgupta/finetuned-wav2vec2-960h) | - | This checkpoint is obtained by fine-tuning Wav2Vec2 model on 960h of LibriSpeech dataset during my GSoC tenure. You can reproduce training by running [`main.py`](src/main.py) on TPU v3-8 |
+| [`🤗Hub`](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [`TFHub`](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](https://hf.co/facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [`🤗Hub`](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [`TFHub`](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](https://hf.co/facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [`🤗Hub`](https://hf.co/vasudevgupta/finetuned-wav2vec2-960h) | - | This checkpoint is obtained by fine-tuning Wav2Vec2 model on 960h of LibriSpeech dataset during my GSoC tenure. You can reproduce training by running [`main.py`](src/main.py) on TPU v3-8 |
 
-To know more about the process of obtaining first two checkpoints, please checkout [this section](#running-conversion-script) and to know about the process of obtaining the last checkpoint, please checkout [this section](#reproducing-this-project).
+To know more about the process of obtaining the first two checkpoints, please check out [this section](#running-conversion-script) and to know about the process of obtaining the last checkpoint, please check out [this section](#reproducing-this-project).
 
 ## Using this Repository
 
@@ -99,12 +99,12 @@ gsutil cp -r ${DATA_SPLIT} gs://<DATA_BUCKET_NAME>/${DATA_SPLIT}
 
 Now your GCS bucket (`DATA_BUCKET_NAME`) should look like this:
 
-    .
-    |- ${DATA_SPLIT}
-        |- ${DATA_SPLIT}-0.tfrecord
-        |- ${DATA_SPLIT}-1.tfrecord
-        .
-        .
+ .
+ |- ${DATA_SPLIT}
+ |- ${DATA_SPLIT}-0.tfrecord
+ |- ${DATA_SPLIT}-1.tfrecord
+ .
+ .
 
 Follow the above steps for all other data splits. You just need to change the `DATA_SPLIT` environment variable.
 
@@ -130,12 +130,12 @@ TPU_NAME=<tpu-name> python3 main.py
 
 ## Running Conversion script
 
-Original PyTorch checkpoints (from facebook) can be converted using the conversion script avialable in this repositary.
+Original PyTorch checkpoints (from Facebook) can be converted using the conversion script available in this repository.
 
 ```shell
 python3 convert_torch_to_tf.py \
---hf_model_id facebook/wav2vec2-base \    # HuggingFace Hub ID of the model you want to convert
---with_lm_head                            # Whether to use `Wav2Vec2ForCTC` or `Wav2Vec2Model` from this repositary
+--hf_model_id facebook/wav2vec2-base \ # HuggingFace Hub ID of the model you want to convert
+--with_lm_head # Whether to use `Wav2Vec2ForCTC` or `Wav2Vec2Model` from this repository
 ```
 
 ## Running tests

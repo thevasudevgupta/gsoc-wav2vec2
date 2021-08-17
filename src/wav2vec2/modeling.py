@@ -35,9 +35,7 @@ class TFKerasModel(tf.keras.Model):
         return ModelHubMixin.push_to_hub(directory, model_id=model_id)
 
     @classmethod
-    def from_pretrained(
-        cls, model_id, jit_compile=None, **config_kwargs
-    ) -> tf.keras.Model:
+    def from_pretrained(cls, model_id, **config_kwargs) -> tf.keras.Model:
         """
         This will load model weights from the dictionary specified or download it from HuggingFace Hub
         if weights are not available locally.
@@ -76,10 +74,7 @@ class TFKerasModel(tf.keras.Model):
         input_shape = config_kwargs.pop("input_shape", (1, 2048))
         config = Wav2Vec2Config.from_json(os.path.join(save_dir, "config.json"))
         config = replace(config, **config_kwargs)
-        if isinstance(cls, Wav2Vec2ForCTC):
-            model = cls(config, jit_compile=jit_compile, input_shape=input_shape)
-        else:
-            model = cls(config, input_shape=input_shape)
+        model = cls(config, input_shape=input_shape)
         model.load_weights(os.path.join(save_dir, "tf_model.h5"))
         print("Total number of loaded variables:", len(model.variables))
         return model
@@ -90,11 +85,15 @@ class TFKerasModel(tf.keras.Model):
         if input_shape is None:
             input_shape = (1, 2048)
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
-        return self(dummy_input)
-
+        try:
+            # this operation doesn't work on CPU
+            self.predict(dummy_input)
+        except:
+            # this operation will hang the TPU VM, hence prefer `.predict`
+            self(dummy_input)
 
 class Wav2Vec2Model(TFKerasModel):
-    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 50000), name="wav2vec2"):
+    def __init__(self, config: Wav2Vec2Config, input_shape=(1, 246000), name="wav2vec2"):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
             raise ValueError("`config` must be an instace of `Wave2Vec2Config`")
@@ -190,7 +189,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
     """Wave2Vec2 model with a CTC head."""
 
     def __init__(
-        self, config: Wav2Vec2Config, input_shape=(1, 50000), name="wav2vec2-ctc"
+        self, config: Wav2Vec2Config, input_shape=(1, 246000), name="wav2vec2-ctc"
     ):
         super().__init__(name=name)
         if not isinstance(config, Wav2Vec2Config):
@@ -222,57 +221,3 @@ class Wav2Vec2ForCTC(TFKerasModel):
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)
         return batch
-
-
-class Wav2Vec2ForCTCTrainer(Wav2Vec2ForCTC):
-    def __init__(self, *args, jit_compile=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tr_fwd = tf.function(self._tr_fwd, jit_compile=jit_compile)
-        self.eval_fwd = tf.function(self._eval_fwd, jit_compile=jit_compile)
-
-    def compile(self, optimizer, loss_fn):
-        super().compile(optimizer=optimizer)
-        self.loss_fn = loss_fn
-        self.loss_tracker = tf.keras.metrics.Mean(name="loss")
-
-    @property
-    def metrics(self):
-        """TFKeras will call `metric.reset_states()` because of this method."""
-        return [self.loss_tracker]
-
-    def train_step(self, data):
-        """
-        Args:
-            data (:obj: `tf.data.Dataset`):
-                This data will be fed into `model.call()`.
-
-        Returns:
-            Avg-running loss at epoch level.
-        """
-        speech, labels = data
-
-        with tf.GradientTape() as gtape:
-            logits = self.tr_fwd(speech)
-            loss = self.loss_fn(labels, logits)
-
-        gradients = gtape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-
-        self.loss_tracker.update_state(loss)
-        return {m.name: m.result() for m in self.metrics}
-
-    def test_step(self, data):
-        speech, labels = data
-        logits = self.eval_fwd(speech)
-        loss = self.loss_fn(labels, logits)
-
-        self.loss_tracker.update_state(loss)
-        return {m.name: m.result() for m in self.metrics}
-
-    def _tr_fwd(self, speech):
-        """In graph mode, forward pass only works with jit-compile."""
-        return self(speech, training=True)
-
-    def _eval_fwd(self, speech):
-        """In graph mode, forward pass only works with jit-compile."""
-        return self(speech, training=False)

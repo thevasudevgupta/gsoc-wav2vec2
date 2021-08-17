@@ -2,10 +2,10 @@
 Run this script to launch training
 
 EXAMPLE:
-    >>> ON_TPU=true python3 main.py
+    >>> TPU_NAME=gsoc-project python3 main.py
 
     >>> # for running dummy training on TPUs
-    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech/dev-clean/dev-clean-0.tfrecord ON_TPU=true python3 main.py
+    >>> DUMMY_DATA_PATH=gs://gsoc-librispeech-us/dev-clean/dev-clean-0.tfrecord TPU_NAME=gsoc-project python3 main.py
 """
 
 import os
@@ -18,23 +18,28 @@ import wandb
 import numpy as np
 from data_utils import LibriSpeechDataLoader, LibriSpeechDataLoaderArgs
 from training_utils import fetch_callbacks, is_gpu_available, is_tpu_available
-from wav2vec2 import CTCLoss, Wav2Vec2ForCTCTrainer
+from wav2vec2 import CTCLoss, Wav2Vec2ForCTC, Wav2Vec2Config
 
 
-ON_TPU = os.getenv("ON_TPU", "false")
+TPU_NAME = os.getenv("TPU_NAME", "none")
+DATA_BUCKET_NAME = os.getenv("DATA_BUCKET_NAME", "gsoc-librispeech-us")
+CKPT_BUCKET_NAME = os.getenv("CKPT_BUCKET_NAME", "gsoc-checkpoints-us")
 DUMMY_DATA_PATH = os.getenv("DUMMY_DATA_PATH", "none")
 
 
 @dataclass
 class TrainingArgs:
-
     # main hparams
-    lr: float = 2e-5
-    transition_epoch: int = 1
-    max_epochs: int = 2
-    batch_size_per_device: int = 16
+    stage1_lr: float = 1e-3
+    stage1_epochs: int = 15
 
-    logging_steps: int = 1
+    stage2_lr1: float = 1e-4
+    stage2_transition_epochs: int = 10
+    stage2_lr2: float = 5e-5
+    stage2_epochs: int = 15
+
+    batch_size_per_device: int = 32
+    logging_steps: int = 16
 
     # regularization
     apply_spec_augment: bool = True
@@ -48,23 +53,32 @@ class TrainingArgs:
     seed: int = 42
     from_tfrecords: bool = True
 
+    # For training, we converted complete data into multiple tfrecords
+    # these tfrecords are further stored in `DATA_BUCKET_NAME`
+    # note tfrecords from different splits are stored in different directories in same bucket
+    # for more information on data prepartion, please checkout `readme.md`
     train_tfrecords: List[str] = field(
+        repr=False,
         default_factory=lambda: [
-            "gs://gsoc-librispeech/train-clean-100/",
-            "gs://gsoc-librispeech/train-clean-360/",
-            "gs://gsoc-librispeech/train-other-500/",
+            f"gs://{DATA_BUCKET_NAME}/train-clean-100/",
+            f"gs://{DATA_BUCKET_NAME}/train-clean-360/",
+            f"gs://{DATA_BUCKET_NAME}/train-other-500/",
         ]
     )
+    # similarly dev data is stored in dev-clean & dev-other directory in same bucket
     val_tfrecords: List[str] = field(
+        repr=False,
         default_factory=lambda: [
-            "gs://gsoc-librispeech/dev-clean/",
-            "gs://gsoc-librispeech/dev-other/",
+            f"gs://{DATA_BUCKET_NAME}/dev-clean/",
+            # f"gs://{DATA_BUCKET_NAME}/dev-other/",
         ]
     )
+    # similarly test data is stored in test-clean & test-other directory in same bucket
     test_tfrecords: List[str] = field(
+        repr=False,
         default_factory=lambda: [
-            "gs://gsoc-librispeech/test-clean/",
-            "gs://gsoc-librispeech/test-other/",
+            f"gs://{DATA_BUCKET_NAME}/test-clean/",
+            # f"gs://{DATA_BUCKET_NAME}/test-other/",
         ]
     )
 
@@ -72,13 +86,11 @@ class TrainingArgs:
     val_dir: str = "../data/LibriSpeech/test-clean/"
     test_dir: str = "../data/LibriSpeech/test-clean/"
 
-    model_id: str = "vasudevgupta/tf-wav2vec2-base"
-    base_dir: str = "checkpoints"
-    ckpt_path: str = "checkpoint"
+    model_id: str = "gs://gsoc-weights/tf-wav2vec2-base"
+    ckpt_path: str = f"gs://{CKPT_BUCKET_NAME}/experiment"
 
     # wandb args
     project_name: str = "gsoc-wav2vec2"
-    run_name: str = "finetuning"
 
     def __post_init__(self):
 
@@ -112,29 +124,25 @@ class TrainingArgs:
             else:
                 self.train_tfrecords = self.val_tfrecords = self.test_tfrecords = None
 
-        if self.logging_steps is not None:
-            os.environ["LOGGING_STEPS"] = str(self.logging_steps)
 
-        if self.base_dir is not None:
-            os.makedirs(self.base_dir, exist_ok=True)
-            if wandb.run is not None:
-                self.base_dir = self.base_dir + f"-{wandb.run.id}"
-
-        self.ckpt_path = os.path.join(self.base_dir, self.ckpt_path)
+def build_model(args):
+    model_config = Wav2Vec2Config(apply_spec_augment=args.apply_spec_augment, survival_prob=args.survival_prob)
+    model = Wav2Vec2ForCTC(model_config, input_shape=(1, args.audio_maxlen))
+    print(f"loading model from {args.model_id}")
+    model.load_weights(f"{args.model_id}/tf_model")
+    return model
 
 
 def main(args):
     # on TPUs, we need to connect to TPU cluster first
     # then TensorFlow will be able to detect TPUs
-    if ON_TPU == "true":
-        print("############ INITIATING COLAB TPU ############")
-        resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+    if TPU_NAME != "none":
+        print("############ INITIATING TPU ############")
+        resolver = tf.distribute.cluster_resolver.TPUClusterResolver(TPU_NAME)
         tf.config.experimental_connect_to_cluster(resolver)
         print("##############################################")
 
-    jit_compile = True
     if is_tpu_available():
-        jit_compile = None
         tf.tpu.experimental.initialize_tpu_system(resolver)
         print("All devices: ", tf.config.list_logical_devices("TPU"))
         strategy = tf.distribute.TPUStrategy(resolver)
@@ -175,8 +183,6 @@ def main(args):
     test_dataset = LibriSpeechDataLoader(test_data_args)
     test_dataset = test_dataset(seed=None, drop_remainder=True)
 
-    print("######### Initializing training state #########")
-
     # `CTCLoss` needs to know raw-speech input shape in advance
     # Hence, defining it here
     model_input_shape = (args.batch_size_per_device, args.audio_maxlen)
@@ -185,49 +191,80 @@ def main(args):
 
     with strategy.scope():
         print("######### Preparing model #########")
-        model = Wav2Vec2ForCTCTrainer.from_pretrained(
-            args.model_id,
-            jit_compile=jit_compile,
-            input_shape=model_input_shape,
-            apply_spec_augment=args.apply_spec_augment,
-            survival_prob=args.survival_prob,
-        )
-
-        # during fine-tuning, we need to freeze the feature extraction layer from the pre-trained weights
-        model.freeze_feature_extractor()
+        model = build_model(args)
 
         # `division_factor` should be passed else loss will be summed
         # it will help us in distributed training over several processes
-        loss_fn = CTCLoss(
+        loss = CTCLoss(
             model.config, model_input_shape, division_factor=global_batch_size
         )
 
-        optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
-        model.compile(optimizer, loss_fn)
+        # training is divided into 2 stages, hence we will compile model twice & call .fit(...) twice
 
-    model.summary()
-    print("######### Initiating training #########")
-    model.fit(
-        tr_dataset,
-        validation_data=val_dataset,
-        epochs=args.max_epochs,
-        callbacks=fetch_callbacks(args),
-        verbose="auto",
-    )
+        print("######################### STAGE-1 #########################")
+        # for 1st stage, we will just train the LM head (i.e. top most dense layer) untill the convergence
+        # this will ensure pre-trained weights don't get penalized because of randomly initialized LM head
 
-    print("\n######### Preparing for evaluation #########")
+        print("######## FREEZING THE BACKBONE (i.e all pretrained weights) ########")
+        # till `stage1_epochs`, we will train only `lm_head`
+        model.layers[0].trainable = False
+        model.summary()
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.stage1_lr)
+        model.compile(optimizer=optimizer, loss=loss)
+
+        try:
+            history = model.fit(
+                tr_dataset,
+                validation_data=val_dataset,
+                epochs=args.stage1_epochs,
+                callbacks=fetch_callbacks(args, is_stage2=False),
+                verbose="auto",
+            )
+            print(history.history)
+        except KeyboardInterrupt:
+            print("Interrupting through KEYBOARD")
+
+        print("###########################################################")
+
+        print("######################### STAGE-2 #########################")
+        # In 2nd stage, we will fine-tune the complete model except the feature extraction layers
+        # It's recommended to freeze all the feature extraction layers during fine-tuning stage
+
+        model.trainable = True
+        print("############## FREEZING THE FEATURE_EXTRACTION LAYERS ##############")
+        for i in range(len(model.layers[0].layers) - 2):
+            model.layers[0].layers[i].trainable = False
+        model.summary()
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=args.stage2_lr1)
+        model.compile(optimizer=optimizer, loss=loss)
+
+        try:
+            history = model.fit(
+                tr_dataset,
+                validation_data=val_dataset,
+                epochs=args.stage2_epochs,
+                callbacks=fetch_callbacks(args, is_stage2=True),
+                verbose="auto",
+            )
+            print(history.history)
+        except KeyboardInterrupt:
+            print("Interrupting through KEYBOARD")
+
+        print("###########################################################")
+
+    print("\n######### Running evaluation #########")
     results = model.evaluate(test_dataset, return_dict=True)
-    print("RESULTS:\n", results)
+    print(results)
 
 
 if __name__ == "__main__":
 
     # setting up args for training (supports wandb sweep for distributed hparams tuning)
     args = TrainingArgs()
-    wandb.init(project=args.project_name, config=asdict(args), dir=args.base_dir)
-    logging_dict = dict(wandb.config)
-    # TODO: fix sweep
-    # args = replace(args, **logging_dict)
+    wandb.init(project=args.project_name, config=asdict(args))
+    args.ckpt_path = os.path.join(args.ckpt_path + f"-{wandb.run.id}")
 
     # setting up seed for reproducible runs
     tf.random.set_seed(args.seed)

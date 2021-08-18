@@ -54,7 +54,7 @@ The following table summarizes the notebooks, I made during my GSoC tenure:
 
 | Checkpoint | WER (with no padding) | WER with constant padding to 246000 |
 |-------------|------------------------|-------------------------------------|
-| [`vasudevgupta/gsoc-wav2vec2-960h`](https://huggingface.co/vasudevgupta/gsoc-wav2vec2-960h) | 3% | 6% | 
+| [`vasudevgupta/gsoc-wav2vec2-960h`](https://huggingface.co/vasudevgupta/gsoc-wav2vec2-960h) | 3.3% | 6% | 
 | [`vasudevgupta/finetuned-wav2vec2-960h`](https://huggingface.co/vasudevgupta/finetuned-wav2vec2-960h) | 5.6% | 6.7% |
 
 ## Latency Comparison

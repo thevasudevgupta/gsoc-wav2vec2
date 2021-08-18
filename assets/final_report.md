@@ -3,12 +3,13 @@
 
 ## Objectives
 
-* Implement `Wav2Vec2` in `TensorFlow 2.0` and **release the pre-trained model** for the TensorFlow community
-* Work on several **tutorial/colab-notebooks** for attracting attention of TensorFlow community toward **state-of-art speech models**
+* Implement `Wav2Vec2` in `TensorFlow` and **release the pre-trained model** for the TensorFlow community
+* Fine-tune Wav2Vec2 model to achieve state-of-art results on speech-related tasks like Automatic Speech Recognition
+* Work on Colab Notebooks and tutorials to make it easier for the community to use state-of-the-art speech models
 
 ## Acknowledgement
 
-I would like to thank [**Google Summer of Code**](https://summerofcode.withgoogle.com) and [**TensorFlow**](https://www.tensorflow.org) for giving me this opportunity. I am grateful to my mentors [**Sayak Paul**](https://github.com/sayakpaul), [**Morgan Roff**](https://github.com/MorganR) & [**Jaeyoun Kim**](https://github.com/jaeyounkim) for their continuous support and guidance. I would like to also thank [**TPU Research Cloud**](https://sites.research.google/trc/) for providing me with high-performance TPUs for the training model at scale.
+I would like to thank [**Google Summer of Code**](https://summerofcode.withgoogle.com) and [**TensorFlow**](https://www.tensorflow.org) for giving me this opportunity. I am grateful to my mentors [**Sayak Paul**](https://github.com/sayakpaul), [**Morgan Roff**](https://github.com/MorganR) & [**Jaeyoun Kim**](https://github.com/jaeyounkim) for their continuous support and guidance. I would like to also thank [**TPU Research Cloud**](https://sites.research.google/trc/) for providing me with high-performance TPUs that allowed me to train the models at scale.
 
 ## Milestones achieved
 

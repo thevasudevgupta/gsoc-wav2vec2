@@ -13,7 +13,7 @@ class Wav2Vec2Config:
     intermediate_size: int = 3072
     is_gelu_approx: bool = False
     layer_norm_eps: float = 1e-5
-    survival_prob: float = 0.5
+    survival_prob: float = 1.0
     pad_id: int = 0
 
     # positional embedding

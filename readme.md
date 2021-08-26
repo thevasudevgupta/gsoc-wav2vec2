@@ -20,11 +20,11 @@ The repository comes with shiny Colab Notebooks. Below you can find a list of th
 
 Below is a summary of checkpoints obtained during the project:
 
-| Checkpoint | TF `SavedModel` | Description |
-|------------|-------------|-------------|
-| [`🤗Hub`](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [`TFHub`](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](https://hf.co/facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
-| [`🤗Hub`](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [`TFHub`](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](https://hf.co/facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
-| [`🤗Hub`](https://hf.co/vasudevgupta/finetuned-wav2vec2-960h) | - | This checkpoint is obtained by fine-tuning Wav2Vec2 model on 960h of LibriSpeech dataset during my GSoC tenure. You can reproduce training by running [`main.py`](src/main.py) on TPU v3-8 |
+| 🤗Hub Checkpoint | TFHub `SavedModel` | Description |
+|------------------|--------------------|-------------|
+| [`gsoc-wav2vec2`](https://hf.co/vasudevgupta/gsoc-wav2vec2) | [`wav2vec2`](https://tfhub.dev/vasudevgupta7/wav2vec2/1) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2](https://hf.co/facebook/wav2vec2-base) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [`gsoc-wav2vec2-960h`](https://hf.co/vasudevgupta/gsoc-wav2vec2-960h) | [`wav2vec2-960h`](https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1) | This checkpoint is TensorFlow's equivalent of [fine-tuned Wav2Vec2](https://hf.co/facebook/wav2vec2-base-960h) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
+| [`finetuned-wav2vec2-960h`](https://hf.co/vasudevgupta/finetuned-wav2vec2-960h) | - | This checkpoint is obtained by fine-tuning Wav2Vec2 model on 960h of LibriSpeech dataset during my GSoC tenure. You can reproduce training by running [`main.py`](src/main.py) on TPU v3-8 |
 
 To know more about the process of obtaining the first two checkpoints, please check out [this section](#running-conversion-script) and to know about the process of obtaining the last checkpoint, please check out [this section](#reproducing-this-project).
 
@@ -37,6 +37,8 @@ To know more about the process of obtaining the first two checkpoints, please ch
 pip3 install git+https://github.com/vasudevgupta7/gsoc-wav2vec2@main
 ```
 
+You can use the fine-tuned checkpoints (from 🤗Hub) like this: 
+
 ```python
 from wav2vec2 import Wav2Vec2ForCTC, Wav2Vec2Config
 
@@ -47,6 +49,17 @@ model = Wav2Vec2ForCTC(config)
 # incase you are interested in already trained model, use `.from_pretrained` method
 model_id = "finetuned-wav2vec2-960h"
 model = Wav2Vec2ForCTC.from_pretrained(model_id)
+```
+
+Additionally, you can use the `SavedModel` from TFHub like this:
+
+```python
+import tensorflow_hub as hub
+
+model_url = "https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1"
+model = hub.KerasLayer(model_url)
+
+# use this `model`, just like any other TF SavedModel
 ```
 
 Please checkout the notebooks referred to in this repository for more information on how to use the `Wav2Vec2` model.

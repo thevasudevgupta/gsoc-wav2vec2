@@ -35,7 +35,7 @@ class Wav2Vec2Config:
 
     attention_norm_type: str = "postnorm"
     feature_extractor_norm_type: bool = "group"
-    requires_attention_mask: bool = False
+    is_robust: bool = False
 
     def __post_init__(self):
         if not (len(self.filter_sizes) == len(self.kernal_sizes) == len(self.strides)):
@@ -64,7 +64,7 @@ class Wav2Vec2Config:
 class RobustWav2Vec2Config(Wav2Vec2Config):
     attention_norm_type: str = "prenorm"
     feature_extractor_norm_type: str = "layer"
-    requires_attention_mask: bool = True
+    is_robust: bool = True
 
     conv_bias: bool = True
 

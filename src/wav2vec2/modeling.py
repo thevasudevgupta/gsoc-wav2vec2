@@ -1,8 +1,10 @@
 """TensorFlow implementation of Wav2Vec2"""
 
 import os
+import logging
 import subprocess
 from dataclasses import replace
+from typing import Optional
 
 import tensorflow as tf
 
@@ -13,6 +15,7 @@ from .encoder import Wav2Vec2Encoder
 from .feature_extractor import FeatureExtractorLayer, FeatureProjection
 from .spec_augment import apply_spec_augmentation
 
+logger = logging.getLogger(__name__)
 
 class TFKerasModel(tf.keras.Model):
     def save_pretrained(self, save_dir):
@@ -101,6 +104,7 @@ class Wav2Vec2Model(TFKerasModel):
 
         self.config = config
         self.hidden_size = config.hidden_size
+        self.is_robust = config.is_robust
 
         # spec-augmentation
         self.apply_spec_augment = config.apply_spec_augment
@@ -154,7 +158,7 @@ class Wav2Vec2Model(TFKerasModel):
             trainable=True,
         )
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask: Optional[tf.Tensor] = None, training=False):
         """
         Args:
             batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
@@ -165,6 +169,8 @@ class Wav2Vec2Model(TFKerasModel):
         Returns:
             Logits from the model of shape (batch_size, seqlen, hidden_dim).
         """
+        if self.is_robust and attention_mask is None:
+            logger.warning("You should pass `attention_mask` when working with latest Wav2Vec2 checkpoints")
 
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
@@ -179,7 +185,11 @@ class Wav2Vec2Model(TFKerasModel):
                 self.mask_time_length,
             )
 
-        batch = self.encoder(batch, training=training)
+        if attention_mask is not None:
+            # TODO: fix attention mask input
+            pass
+
+        batch = self.encoder(batch, attention_mask=attention_mask, training=training)
         return batch
 
     def freeze_feature_extractor(self):
@@ -210,7 +220,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
         """This will freeze the feature extractor layers (Recommended to use for fine-tuning)."""
         self.model.freeze_feature_extractor()
 
-    def call(self, batch: tf.Tensor, training=False):
+    def call(self, batch: tf.Tensor, attention_mask: Optional[tf.Tensor] = None, training=False):
         """
         Args:
             batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
@@ -220,7 +230,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
         Returns:
             Logits from the model of shape (batch_size, seqlen, vocab_size).
         """
-        batch = self.model(batch, training=training)
+        batch = self.model(batch, attention_mask=attention_mask, training=training)
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)
         return batch

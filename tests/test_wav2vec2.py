@@ -269,8 +269,6 @@ class TFhubTester(unittest.TestCase):
         self._test_hub_model(hub_id, tf_model)
 
     def test_wav2vec2_base_960h(self):
-        # TODO: change hub_id after model is exported to TFHub
         hub_id = "https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1"
-        # hub_id = "https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1"
         tf_model = Wav2Vec2ForCTC.from_pretrained("vasudevgupta/gsoc-wav2vec2-960h")
         self._test_hub_model(hub_id, tf_model)

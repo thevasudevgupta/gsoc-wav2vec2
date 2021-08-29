@@ -19,7 +19,7 @@ class TransformerAttention(tf.keras.layers.Layer):
 
         self.dropout = tf.keras.layers.Dropout(dropout)
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask=None, training=False):
         head_size = batch.shape[2] // self.num_heads
         q_out = self._prepare_either_qkv(self.q(batch), head_size)
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
@@ -27,14 +27,17 @@ class TransformerAttention(tf.keras.layers.Layer):
 
         q_out = q_out * head_size ** (-0.5)
 
-        batch = self.get_context(q_out, k_out, v_out, training=training)
+        batch = self.get_context(q_out, k_out, v_out, attention_mask=attention_mask, training=training)
         batch = self.projection(batch)
         return batch
 
-    def get_context(self, q_out, k_out, v_out, training=False):
+    def get_context(self, q_out, k_out, v_out, attention_mask=None, training=False):
 
         b, h, l, d = q_out.shape
         attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
+
+        if attention_mask is not None:
+            attn_scores = attn_scores + attention_mask
 
         attn_scores = self.dropout(
             tf.nn.softmax(attn_scores, axis=-1), training=training
@@ -105,13 +108,13 @@ class TransformerLayer(tf.keras.layers.Layer):
         )
         self.stochastic_depth = StochasticDepth(survival_prob)
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask=None, training=False):
 
         # self_attn
         residual = batch
         if self.attention_norm_type == "prenorm":
             batch = self.layer_norm(batch)
-        batch = self.attention(batch, training=training)
+        batch = self.attention(batch, attention_mask=attention_mask, training=training)
         batch = self.dropout(batch, training=training)
         batch = batch + residual
         if self.attention_norm_type == "postnorm":
@@ -245,7 +248,16 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
             for i in range(num_layers)
         ]
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask=None, training=False):
+        if attention_mask is not None:
+            batch[~attention_mask] = 0.0
+            bsz, seqlen = batch.shape
+
+            attention_mask = tf.cast(attention_mask, dtype=batch.dtype)
+            attention_mask = (1.0 - attention_mask) * tf.constant(-10000.0)
+            attention_mask = attention_mask[:, tf.newaxis, tf.newaxis, :]
+            attention_mask = tf.broadcast_to(attention_mask, (bsz, 1, seqlen, seqlen))
+
         batch = batch + self.pos_conv_embed(batch)
 
         if self.attention_norm_type == "postnorm":
@@ -253,7 +265,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
 
         batch = self.dropout(batch, training=training)
         for layer in self.layers:
-            batch = layer(batch, training=training)
+            batch = layer(batch, attention_mask=attention_mask, training=training)
 
         if self.attention_norm_type == "prenorm":
             batch = self.layer_norm(batch)

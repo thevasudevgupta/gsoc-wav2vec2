@@ -6,7 +6,7 @@ import transformers
 
 import numpy as np
 from tqdm.auto import tqdm
-from wav2vec2 import Wav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Model
+from wav2vec2 import Wav2Vec2Config, RobustWav2Vec2Config, Wav2Vec2ForCTC, Wav2Vec2Model
 
 
 SUFFIX = ":0"
@@ -20,7 +20,7 @@ MAPPING = (
 # fill-in PyTorch keys to ignore below
 KEYS_TO_IGNORE = []
 
-ACCEPTABLE_HF_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base"]
+ACCEPTABLE_HF_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base", "facebook/wav2vec2-large-robust"]
 
 PREFIX_WITH_HEAD = "wav2vec2-ctc/"
 SPECIAL_MAPPING_WITH_HEAD = {
@@ -138,6 +138,11 @@ def get_parser():
         action="store_true",
         help="Whether to use `Wav2Vec2Model` or `Wav2Vec2ForCTC` from `wav2vec2/modeling.py`",
     )
+    parser.add_argument(
+        "--is_robust",
+        action="store_true",
+        help="Whether to pass `Wav2Vec2Config` or `RobustWav2Vec2Config` from `wav2vec2/config.py`",
+    )
     return parser
 
 
@@ -145,7 +150,7 @@ if __name__ == "__main__":
 
     args = get_parser().parse_args()
 
-    config = Wav2Vec2Config()
+    config = Wav2Vec2Config() if not args.is_robust else RobustWav2Vec2Config()
     tf_model, _ = get_tf_pretrained_model(
         config, args.hf_model_id, verbose=True, with_lm_head=args.with_lm_head
     )

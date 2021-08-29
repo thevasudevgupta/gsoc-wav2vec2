@@ -10,7 +10,7 @@ The repository comes with shiny Colab Notebooks. Below you can find a list of th
 
 | Notebook | Description |
 |------------|-------------|
-| <a href="https://colab.research.google.com/github/tensorflow/hub/blob/master/examples/colab/wav2vec2_saved_model_finetuning.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook gives you a template to fine-tune a pre-trained Wav2Vec2 SavedModel |
+| [**`tensorflow/hub`**](https://www.tensorflow.org/hub/tutorials/wav2vec2_saved_model_finetuning) | This notebook gives you a template to fine-tune a pre-trained Wav2Vec2 SavedModel |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/wav2vec2_onnx.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates conversion of TF Wav2Vec2 model to ONNX and compares the latency of ONNX exported model & TF model on CPU |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_evaluation_WER_3.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 evaluation (without any padding) on LibriSpeech data |
 | <a href="https://colab.research.google.com/github/vasudevgupta7/gsoc-wav2vec2/blob/main/notebooks/librispeech_evaluation_WER_6.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> | This notebook demonstrates Wav2Vec2 SavedModel evaluation (with constant padding upto 246000 length) on LibriSpeech data |

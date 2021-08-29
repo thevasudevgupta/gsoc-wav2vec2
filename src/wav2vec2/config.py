@@ -33,6 +33,10 @@ class Wav2Vec2Config:
     mask_time_prob: float = 0.05
     mask_time_length: int = 10
 
+    attention_norm_type: str = "postnorm"
+    feature_extractor_norm_type: bool = "group"
+    requires_attention_mask: bool = False
+
     def __post_init__(self):
         if not (len(self.filter_sizes) == len(self.kernal_sizes) == len(self.strides)):
             raise ValueError(
@@ -40,6 +44,9 @@ class Wav2Vec2Config:
             )
         if self.hidden_size % self.num_heads != 0:
             raise ValueError("Hidden size must be perfect multiple of num_heads.")
+
+        assert self.feature_extractor_norm_type in ["group", "layer"], "Only `group` / `layer` are supported"
+        assert self.attention_norm_type in ["prenorm", "postnorm"], "Only `prenorm` / `postnorm` are supported"
 
     def save_pretrained(self, save_dir):
         os.makedirs(save_dir, exist_ok=True)
@@ -51,3 +58,17 @@ class Wav2Vec2Config:
         with open(path, "r") as f:
             config_dict = json.load(f)
         return cls(**config_dict)
+
+
+@dataclass
+class RobustWav2Vec2Config(Wav2Vec2Config):
+    attention_norm_type: str = "prenorm"
+    feature_extractor_norm_type: str = "layer"
+    requires_attention_mask: bool = True
+
+    conv_bias: bool = True
+
+    hidden_size: int = 1024
+    intermediate_size: int = 4096
+    num_heads: int = 16
+    num_layers: int = 24

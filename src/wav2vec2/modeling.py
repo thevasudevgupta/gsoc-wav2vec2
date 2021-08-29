@@ -92,6 +92,7 @@ class TFKerasModel(tf.keras.Model):
             # this operation will hang the TPU VM, hence prefer `.predict`
             self(dummy_input)
 
+
 class Wav2Vec2Model(TFKerasModel):
     def __init__(self, config: Wav2Vec2Config, input_shape=(1, 246000), name="wav2vec2"):
         super().__init__(name=name)
@@ -115,6 +116,7 @@ class Wav2Vec2Model(TFKerasModel):
                 config.strides,
                 conv_bias=config.conv_bias,
                 is_gelu_approx=config.is_gelu_approx,
+                feature_extractor_norm_type=config.feature_extractor_norm_type,
                 layer_id=i,
                 name=f"feature_extractor/conv_layers/{i}",
             )
@@ -137,6 +139,7 @@ class Wav2Vec2Model(TFKerasModel):
             dropout=config.dropout,
             layer_norm_eps=config.layer_norm_eps,
             is_gelu_approx=config.is_gelu_approx,
+            attention_norm_type=config.attention_norm_type,
             name="encoder",
         )
 

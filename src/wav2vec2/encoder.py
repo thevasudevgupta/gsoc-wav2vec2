@@ -250,9 +250,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
 
     def call(self, batch, attention_mask=None, training=False):
         if attention_mask is not None:
-            batch[~attention_mask] = 0.0
-            bsz, seqlen = batch.shape
-
+            bsz, seqlen, _ = batch.shape
             attention_mask = tf.cast(attention_mask, dtype=batch.dtype)
             attention_mask = (1.0 - attention_mask) * tf.constant(-10000.0)
             attention_mask = attention_mask[:, tf.newaxis, tf.newaxis, :]

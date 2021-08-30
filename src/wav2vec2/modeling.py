@@ -17,6 +17,7 @@ from .spec_augment import apply_spec_augmentation
 
 logger = logging.getLogger(__name__)
 
+
 class TFKerasModel(tf.keras.Model):
     def save_pretrained(self, save_dir):
         """
@@ -105,6 +106,8 @@ class Wav2Vec2Model(TFKerasModel):
         self.config = config
         self.hidden_size = config.hidden_size
         self.is_robust = config.is_robust
+        self.kernal_sizes = config.kernal_sizes
+        self.strides = config.strides
 
         # spec-augmentation
         self.apply_spec_augment = config.apply_spec_augment
@@ -163,14 +166,19 @@ class Wav2Vec2Model(TFKerasModel):
         Args:
             batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
                 Sound tensor obtained from `Wav2Vec2Processor.__call__`.
+            attention_mask (:obj: `tf.Tensor`, `optional`) of shape (batch_size, seqlen):
+                Don't pass `attention_mask` when working with checkpoints based on `wav2vec2-base`
+                otherwise you should pass this argument.
             training (:obj: `bool`, `optional`):
                 Whether to use model for training.
 
         Returns:
             Logits from the model of shape (batch_size, seqlen, hidden_dim).
         """
-        if self.is_robust and attention_mask is None:
-            logger.warning("You should pass `attention_mask` when working with latest Wav2Vec2 checkpoints")
+        if self.is_robust and attention_mask is None and batch.shape[0] > 1:
+            logger.warning("You should pass `attention_mask` when working with Wav2Vec2 new checkpoints")
+        elif not self.is_robust and attention_mask is not None:
+            logger.warning("You should not pass `attention_mask` when working with checkpoints based on `wav2vec2-base`")
 
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
@@ -186,8 +194,11 @@ class Wav2Vec2Model(TFKerasModel):
             )
 
         if attention_mask is not None:
-            # TODO: fix attention mask input
-            pass
+            input_length = tf.reduce_sum(attention_mask, axis=-1)
+            for kernal_size, stride in zip(self.kernal_sizes, self.strides):
+                input_length = 1 + (input_length - kernal_size) // stride
+
+            attention_mask = tf.sequence_mask(input_length, maxlen=batch.shape[1], dtype=tf.int32)
 
         batch = self.encoder(batch, attention_mask=attention_mask, training=training)
         return batch
@@ -225,6 +236,9 @@ class Wav2Vec2ForCTC(TFKerasModel):
         Args:
             batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
                 Sound tensor obtained from `Wav2Vec2Processor.__call__`.
+            attention_mask (:obj: `tf.Tensor`, `optional`) of shape (batch_size, seqlen):
+                Don't pass `attention_mask` when working with checkpoints based on `wav2vec2-base`
+                otherwise you should pass this argument.
             training (:obj: `bool`, `optional`):
                 Whether to use model for training.
         Returns:

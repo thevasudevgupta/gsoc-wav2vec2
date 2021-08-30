@@ -83,18 +83,19 @@ class TFKerasModel(tf.keras.Model):
         print("Total number of loaded variables:", len(model.variables))
         return model
 
-    def _init(self, input_shape=None):
+    def _init(self, input_shape=None, is_robust=False):
         """Build Model weights using dummy inputs"""
         # call this at the end only
         if input_shape is None:
             input_shape = (1, 2048)
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
+        attention_mask = tf.ones(input_shape) if is_robust else None
         try:
             # this operation doesn't work on CPU
-            self.predict(dummy_input)
+            self.predict(dummy_input, attention_mask=attention_mask)
         except:
             # this operation will hang the TPU VM, hence prefer `.predict`
-            self(dummy_input)
+            self(dummy_input, attention_mask=attention_mask)
 
 
 class Wav2Vec2Model(TFKerasModel):
@@ -151,7 +152,7 @@ class Wav2Vec2Model(TFKerasModel):
         )
 
         if input_shape is not None:
-            self._init(input_shape=input_shape)
+            self._init(input_shape=input_shape, is_robust=config.is_robust)
 
     def build(self, input_shape):
         self.masked_spec_augment = self.add_weight(
@@ -198,7 +199,7 @@ class Wav2Vec2Model(TFKerasModel):
             for kernal_size, stride in zip(self.kernal_sizes, self.strides):
                 input_length = 1 + (input_length - kernal_size) // stride
 
-            attention_mask = tf.sequence_mask(input_length, maxlen=batch.shape[1], dtype=tf.int32)
+            attention_mask = tf.sequence_mask(input_length, maxlen=batch.shape[1])
 
         batch = self.encoder(batch, attention_mask=attention_mask, training=training)
         return batch
@@ -225,7 +226,7 @@ class Wav2Vec2ForCTC(TFKerasModel):
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size, name="lm_head")
 
-        self._init(input_shape=input_shape)
+        self._init(input_shape=input_shape, is_robust=config.is_robust)
 
     def freeze_feature_extractor(self):
         """This will freeze the feature extractor layers (Recommended to use for fine-tuning)."""

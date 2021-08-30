@@ -16,9 +16,12 @@ if is_torch_available():
     import torch.nn as nn
 
 if is_transformers_available():
-    from transformers import Wav2Vec2CTCTokenizer as HFWav2Vec2CTCTokenizer
-    from transformers import Wav2Vec2FeatureExtractor as HFWav2Vec2FeatureExtractor
-    from transformers import Wav2Vec2ForCTC as HFWav2Vec2ForCTC
+    from transformers import (
+        Wav2Vec2CTCTokenizer as HFWav2Vec2CTCTokenizer,
+        Wav2Vec2FeatureExtractor as HFWav2Vec2FeatureExtractor,
+        Wav2Vec2ForCTC as HFWav2Vec2ForCTC,
+        Wav2Vec2Model as HFWav2Vec2Model
+    )
 
 MODEL_ID = "vasudevgupta/gsoc-wav2vec2-960h"
 HF_MODEL_ID = "facebook/wav2vec2-base-960h"
@@ -42,36 +45,50 @@ class Wav2Vec2Tester(unittest.TestCase):
         return batch, hf_batch, tf_labels, hf_labels
 
     @partial(requires_lib, lib=["torch", "transformers"])
-    def _test_inference(self, test_graph_mode=False):
+    def _test_inference(self, model_id, hf_model_id, test_graph_mode=False):
         @tf.function(autograph=True, jit_compile=True)
         def tf_forward(*args, **kwargs):
             return tf_model(*args, **kwargs)
 
         batch, hf_batch, _, _ = self._get_batches()
 
-        tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
-        hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
+        tf_model = Wav2Vec2Model.from_pretrained(model_id, input_shape=batch.shape)
+        hf_model = HFWav2Vec2Model.from_pretrained(hf_model_id)
+
+        if tf_model.config.is_robust:
+            attention_mask = np.ones(batch.shape, dtype=np.int32)
+            attention_mask[0, -1000:] = attention_mask[1, -132:] = 0
+            hf_attention_mask = torch.from_numpy(attention_mask)
+            attention_mask = tf.convert_to_tensor(attention_mask)
+        else:
+            attention_mask = hf_attention_mask = None
 
         if test_graph_mode:
-            tf_out = tf_forward(batch, training=False)
+            tf_out = tf_forward(batch, attention_mask=attention_mask, training=False)
         else:
-            tf_out = tf_model(batch, training=False)
+            tf_out = tf_model(batch, attention_mask=attention_mask, training=False)
         with torch.no_grad():
-            hf_out = hf_model(hf_batch)
+            hf_out = hf_model(hf_batch, attention_mask=hf_attention_mask)
 
         tf_logits = tf_out.numpy()
-        hf_logits = hf_out["logits"].numpy()
+        hf_logits = hf_out["last_hidden_state"].numpy()
 
         assert tf_logits.shape == hf_logits.shape, "Oops, logits shape is not matching"
         assert np.allclose(
-            hf_logits, tf_logits, atol=0.004
+            hf_logits, tf_logits, atol=1e-3
         ), f"difference: {np.max(hf_logits - tf_logits)}"
 
     def test_inference(self):
-        self._test_inference(test_graph_mode=False)
+        model_id, hf_model_id = "vasudevgupta/gsoc-wav2vec2", "facebook/wav2vec2-base"
+        self._test_inference(model_id, hf_model_id, test_graph_mode=False)
+
+    def test_wav2vec2_robust(self):
+        model_id, hf_model_id = "vasudevgupta/gsoc-wav2vec2-robust", "facebook/wav2vec2-large-robust"
+        self._test_inference(model_id, hf_model_id, test_graph_mode=False)
 
     def test_jit_and_graph_mode(self):
-        self._test_inference(test_graph_mode=True)
+        model_id, hf_model_id = "vasudevgupta/gsoc-wav2vec2", "facebook/wav2vec2-base"
+        self._test_inference(model_id, hf_model_id, test_graph_mode=True)
 
     @partial(requires_lib, lib=["transformers"])
     def test_feature_extractor(self):
@@ -85,8 +102,13 @@ class Wav2Vec2Tester(unittest.TestCase):
             tf_out, hf_out, atol=0.01
         ), f"difference:, {np.max(hf_out - tf_out)}"
 
-    @partial(requires_lib, lib=["torch", "transformers"])
     def test_end2end(self):
+        model_id = "vasudevgupta/gsoc-wav2vec2-960h"
+        hf_model_id = "facebook/wav2vec2-base-960h"
+        self._test_end2end(model_id, hf_model_id)
+
+    @partial(requires_lib, lib=["torch", "transformers"])
+    def _test_end2end(self, model_id, hf_model_id):
         # data loading
         b1 = tf.transpose(
             tf.audio.decode_wav(tf.io.read_file("data/sample.wav"))[0], perm=(1, 0)
@@ -98,7 +120,7 @@ class Wav2Vec2Tester(unittest.TestCase):
 
         # data processing
         tf_processor = Wav2Vec2Processor(is_tokenizer=False)
-        hf_processor = HFWav2Vec2FeatureExtractor.from_pretrained(HF_MODEL_ID)
+        hf_processor = HFWav2Vec2FeatureExtractor.from_pretrained(hf_model_id)
 
         hf_batch = hf_processor(batch.numpy().tolist())["input_values"]
         hf_batch = torch.tensor(hf_batch, dtype=torch.float)
@@ -110,12 +132,18 @@ class Wav2Vec2Tester(unittest.TestCase):
         ), f"difference:, {np.max(batch - hf_batch)}"
 
         # model inference
-        tf_model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID, input_shape=batch.shape)
-        hf_model = HFWav2Vec2ForCTC.from_pretrained(HF_MODEL_ID)
+        tf_model = Wav2Vec2ForCTC.from_pretrained(model_id, input_shape=batch.shape)
+        hf_model = HFWav2Vec2ForCTC.from_pretrained(hf_model_id)
 
-        tf_out = tf_model(batch, training=False)
+        if tf_model.config.is_robust:
+            attention_mask = tf.ones(batch.shape)
+            hf_attention_mask = torch.tensor(attention_mask.numpy())
+        else:
+            attention_mask = hf_attention_mask = None
+
+        tf_out = tf_model(batch, attention_mask=attention_mask, training=False)
         with torch.no_grad():
-            hf_out = hf_model(hf_batch)["logits"]
+            hf_out = hf_model(hf_batch, attention_mask=hf_attention_mask)["logits"]
         tf_out = tf_out.numpy()
         hf_out = hf_out.numpy()
 
@@ -128,7 +156,7 @@ class Wav2Vec2Tester(unittest.TestCase):
         tf_tokenizer = Wav2Vec2Processor(
             is_tokenizer=True, vocab_path="data/vocab.json"
         )
-        hf_tokenizer = HFWav2Vec2CTCTokenizer.from_pretrained(HF_MODEL_ID)
+        hf_tokenizer = HFWav2Vec2CTCTokenizer.from_pretrained(hf_model_id)
 
         tf_out = np.argmax(tf_out, axis=-1).squeeze()
         hf_out = np.argmax(hf_out, axis=-1).squeeze()

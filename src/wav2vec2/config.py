@@ -65,7 +65,6 @@ class RobustWav2Vec2Config(Wav2Vec2Config):
     attention_norm_type: str = "prenorm"
     feature_extractor_norm_type: str = "layer"
     is_robust: bool = True
-
     conv_bias: bool = True
 
     hidden_size: int = 1024

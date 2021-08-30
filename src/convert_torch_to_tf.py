@@ -20,7 +20,7 @@ MAPPING = (
 # fill-in PyTorch keys to ignore below
 KEYS_TO_IGNORE = []
 
-ACCEPTABLE_HF_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base", "facebook/wav2vec2-large-robust"]
+ACCEPTABLE_HF_IDS = ["facebook/wav2vec2-base-960h", "facebook/wav2vec2-base", "facebook/wav2vec2-large-robust", "facebook/wav2vec2-large-xlsr-53"]
 
 PREFIX_WITH_HEAD = "wav2vec2-ctc/"
 SPECIAL_MAPPING_WITH_HEAD = {

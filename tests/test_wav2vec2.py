@@ -86,6 +86,10 @@ class Wav2Vec2Tester(unittest.TestCase):
         model_id, hf_model_id = "vasudevgupta/gsoc-wav2vec2-robust", "facebook/wav2vec2-large-robust"
         self._test_inference(model_id, hf_model_id, test_graph_mode=False)
 
+    def test_wav2vec2_xlsr(self):
+        model_id, hf_model_id = "vasudevgupta/gsoc-wav2vec2-xlsr-53", "facebook/wav2vec2-large-xlsr-53"
+        self._test_inference(model_id, hf_model_id, test_graph_mode=False)
+
     def test_jit_and_graph_mode(self):
         model_id, hf_model_id = "vasudevgupta/gsoc-wav2vec2", "facebook/wav2vec2-base"
         self._test_inference(model_id, hf_model_id, test_graph_mode=True)

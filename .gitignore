@@ -18,6 +18,8 @@ LibriSpeech/
 checkpoints/
 vasudevgupta/
 wav2vec2-base-960h/
+wav2vec2_robust/
+wav2vec2_xlsr_53/
 wandb
 tf-wav2vec2-base-960h/
 saved-model/

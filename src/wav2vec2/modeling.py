@@ -83,19 +83,23 @@ class TFKerasModel(tf.keras.Model):
         print("Total number of loaded variables:", len(model.variables))
         return model
 
-    def _init(self, input_shape=None, is_robust=False):
+    def _init(self, input_shape=None, is_robust=False, for_export=False):
         """Build Model weights using dummy inputs"""
         # call this at the end only
         if input_shape is None:
             input_shape = (1, 2048)
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
         attention_mask = tf.ones(input_shape) if is_robust else None
-        try:
-            # this operation doesn't work on CPU
-            self.predict(dummy_input, attention_mask=attention_mask)
-        except:
-            # this operation will hang the TPU VM, hence prefer `.predict`
-            self(dummy_input, attention_mask=attention_mask)
+
+        if for_export:
+            self((dummy_input, attention_mask))
+        else:
+            try:
+                # this operation doesn't work on CPU
+                self.predict(dummy_input, attention_mask=attention_mask)
+            except:
+                # this operation will hang the TPU VM, hence prefer `.predict`
+                self(dummy_input, attention_mask=attention_mask)
 
 
 class Wav2Vec2Model(TFKerasModel):
@@ -176,7 +180,7 @@ class Wav2Vec2Model(TFKerasModel):
         Returns:
             Logits from the model of shape (batch_size, seqlen, hidden_dim).
         """
-        if self.is_robust and attention_mask is None and batch.shape[0] > 1:
+        if self.is_robust and attention_mask is None:
             logger.warning("You should pass `attention_mask` when working with Wav2Vec2 new checkpoints")
         elif not self.is_robust and attention_mask is not None:
             logger.warning("You should not pass `attention_mask` when working with checkpoints based on `wav2vec2-base`")

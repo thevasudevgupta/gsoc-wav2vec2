@@ -286,14 +286,24 @@ class TFhubTester(unittest.TestCase):
     def _get_batch(self):
         tf.random.set_seed(SEED)
         batch = tf.random.normal((2, 246000))
-        return batch
+        attention_mask = np.ones(batch.shape, dtype=np.float32)
+        attention_mask[0, -1000:] = attention_mask[1, -132:] = 0.0
+        attention_mask = tf.constant(attention_mask, dtype=tf.float32)
+        return batch, attention_mask
 
     def _test_hub_model(self, hub_id, tf_model):
-        batch = self._get_batch()
+        batch, _ = self._get_batch()
         tfhub_model = hub.KerasLayer(hub_id, trainable=False)
         tfhub_out = tf.function(tfhub_model, jit_compile=True)(batch).numpy()
         out = tf_model(batch).numpy()
         assert np.allclose(tfhub_out, out, atol=1e-3), f"Difference: {tfhub_out} vs {out}"
+
+    def _test_hub_robust_model(self, hub_id, tf_model):
+        batch, attention_mask = self._get_batch()
+        tfhub_model = hub.KerasLayer(hub_id, trainable=False)
+        tfhub_out = tf.function(tfhub_model, jit_compile=True)((batch, attention_mask)).numpy()
+        out = tf_model(batch, attention_mask=attention_mask).numpy()
+        assert np.allclose(tfhub_out, out, atol=1e-2), f"Difference: {tfhub_out} vs {out}"
 
     def test_wav2vec2_base(self):
         hub_id = "https://tfhub.dev/vasudevgupta7/wav2vec2/1"
@@ -304,3 +314,13 @@ class TFhubTester(unittest.TestCase):
         hub_id = "https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1"
         tf_model = Wav2Vec2ForCTC.from_pretrained("vasudevgupta/gsoc-wav2vec2-960h")
         self._test_hub_model(hub_id, tf_model)
+
+    def test_wav2vec2_xlsr_53(self):
+        hub_id = "src/wav2vec2_xlsr_53" # "https://tfhub.dev/vasudevgupta7/wav2vec2-xlsr-53/1"
+        tf_model = Wav2Vec2Model.from_pretrained("vasudevgupta/gsoc-wav2vec2-xlsr-53")
+        self._test_hub_robust_model(hub_id, tf_model)
+
+    def test_wav2vec2_robust(self):
+        hub_id = "src/wav2vec2_robust" # "https://tfhub.dev/vasudevgupta7/wav2vec2-robust/1"
+        tf_model = Wav2Vec2Model.from_pretrained("vasudevgupta/gsoc-wav2vec2-robust")
+        self._test_hub_robust_model(hub_id, tf_model)

@@ -1,15 +1,13 @@
 import argparse
-
 import tensorflow as tf
 
-from convert_torch_to_tf import get_tf_pretrained_model
-from wav2vec2 import Wav2Vec2Config
+from wav2vec2 import Wav2Vec2Model, Wav2Vec2ForCTC
 
 
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--hf_model_id",
+        "--model_id",
         default="facebook/wav2vec2-base",
         type=str,
         help="Model ID of HuggingFace wav2vec2 which needs to be converted into TensorFlow",
@@ -18,12 +16,6 @@ def get_parser():
         "--with_lm_head",
         action="store_true",
         help="Whether to use `Wav2Vec2Model` or `Wav2Vec2ForCTC` from `wav2vec2/modeling.py`",
-    )
-    parser.add_argument(
-        "--verbose",
-        default=False,
-        type=bool,
-        help="Whether to display specific layers conversion while running conversion script",
     )
     parser.add_argument(
         "--saved_model_dir",
@@ -37,21 +29,44 @@ def get_parser():
         type=int,
         help="With what sequence length should model be exported",
     )
+    parser.add_argument(
+        "--is_robust",
+        action="store_true",
+        help="Whether to pass `Wav2Vec2Config` or `RobustWav2Vec2Config` from `wav2vec2/config.py`",
+    )
     return parser
 
 
-if __name__ == "__main__":
+class RobustModelExporter(Wav2Vec2Model):
+    def call(self, inputs, training=False):
+        speech, attention_mask = inputs
+        return super().call(speech, attention_mask=attention_mask, training=training)
 
+    def _init(self, *args, **kwargs):
+        kwargs["for_export"] = True
+        return super()._init(*args, **kwargs)
+
+
+class RobustModelForCTCExporter(Wav2Vec2ForCTC):
+    def call(self, inputs, training=False):
+        speech, attention_mask = inputs
+        return super().call(speech, attention_mask=attention_mask, training=training)
+
+    def _init(self, *args, **kwargs):
+        kwargs["for_export"] = True
+        return super()._init(*args, **kwargs)
+
+
+if __name__ == "__main__":
     args = get_parser().parse_args()
 
     # spec_augmentation can't be supported with saved_model for now
-    config = Wav2Vec2Config(apply_spec_augment=False)
-    model, _ = get_tf_pretrained_model(
-        config, args.hf_model_id, verbose=args.verbose, with_lm_head=args.with_lm_head
-    )
+    if not args.is_robust:
+        ModelClass = Wav2Vec2ForCTC if args.with_lm_head else Wav2Vec2Model
+    else:
+        ModelClass = RobustModelForCTCExporter if args.with_lm_head else RobustModelExporter
 
-    input_signature = [tf.TensorSpec((None, args.seqlen), tf.float32, name="speech")]
-    model.__call__ = tf.function(model.__call__, input_signature=input_signature)
+    model = ModelClass.from_pretrained(args.model_id, apply_spec_augment=False, input_shape=(1, args.seqlen))
     tf.saved_model.save(model, args.saved_model_dir)
 
-    print(f"Your `TF SavedModel ({model})` saved in {args.saved_model_dir}")
+    print(f"Your `TF SavedModel ({model}, {model.config})` saved in {args.saved_model_dir}")

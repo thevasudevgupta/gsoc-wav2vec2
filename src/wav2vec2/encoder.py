@@ -251,12 +251,16 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
     def call(self, batch, attention_mask=None, training=False):
         if attention_mask is not None:
             batch = tf.where(attention_mask[:, :, tf.newaxis], batch, 0.0)
-            bsz, seqlen, _ = batch.shape
+            seqlen = batch.shape[1]
 
             attention_mask = tf.cast(attention_mask, dtype=batch.dtype)
             attention_mask = (1.0 - attention_mask) * tf.constant(-10000.0)
-            attention_mask = attention_mask[:, tf.newaxis, tf.newaxis, :]
-            attention_mask = tf.broadcast_to(attention_mask, (bsz, 1, seqlen, seqlen))
+
+            # tf.broadcast_to doesn't work when batch size is unknown (especially with TFSavedModel)
+            attention_mask = attention_mask[tf.newaxis, :, tf.newaxis, :]
+            attention_mask = tf.repeat(attention_mask, seqlen, axis=0)
+            attention_mask = tf.reshape(attention_mask, (seqlen, -1, 1, seqlen))
+            attention_mask = tf.transpose(attention_mask, perm=[1, 2, 0, 3])
 
         batch = batch + self.pos_conv_embed(batch)
 

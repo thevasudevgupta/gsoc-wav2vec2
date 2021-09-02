@@ -1,8 +1,10 @@
 """TensorFlow implementation of Wav2Vec2"""
 
 import os
+import logging
 import subprocess
 from dataclasses import replace
+from typing import Optional
 
 import tensorflow as tf
 
@@ -12,6 +14,8 @@ from .config import Wav2Vec2Config
 from .encoder import Wav2Vec2Encoder
 from .feature_extractor import FeatureExtractorLayer, FeatureProjection
 from .spec_augment import apply_spec_augmentation
+
+logger = logging.getLogger(__name__)
 
 
 class TFKerasModel(tf.keras.Model):
@@ -79,18 +83,20 @@ class TFKerasModel(tf.keras.Model):
         print("Total number of loaded variables:", len(model.variables))
         return model
 
-    def _init(self, input_shape=None):
+    def _init(self, input_shape=None, is_robust=False):
         """Build Model weights using dummy inputs"""
         # call this at the end only
         if input_shape is None:
             input_shape = (1, 2048)
         dummy_input = tf.ones(input_shape, dtype=tf.float32)
+        attention_mask = tf.ones(input_shape) if is_robust else None
         try:
             # this operation doesn't work on CPU
-            self.predict(dummy_input)
+            self.predict(dummy_input, attention_mask=attention_mask)
         except:
             # this operation will hang the TPU VM, hence prefer `.predict`
-            self(dummy_input)
+            self(dummy_input, attention_mask=attention_mask)
+
 
 class Wav2Vec2Model(TFKerasModel):
     def __init__(self, config: Wav2Vec2Config, input_shape=(1, 246000), name="wav2vec2"):
@@ -100,6 +106,9 @@ class Wav2Vec2Model(TFKerasModel):
 
         self.config = config
         self.hidden_size = config.hidden_size
+        self.is_robust = config.is_robust
+        self.kernal_sizes = config.kernal_sizes
+        self.strides = config.strides
 
         # spec-augmentation
         self.apply_spec_augment = config.apply_spec_augment
@@ -115,6 +124,7 @@ class Wav2Vec2Model(TFKerasModel):
                 config.strides,
                 conv_bias=config.conv_bias,
                 is_gelu_approx=config.is_gelu_approx,
+                feature_extractor_norm_type=config.feature_extractor_norm_type,
                 layer_id=i,
                 name=f"feature_extractor/conv_layers/{i}",
             )
@@ -137,11 +147,12 @@ class Wav2Vec2Model(TFKerasModel):
             dropout=config.dropout,
             layer_norm_eps=config.layer_norm_eps,
             is_gelu_approx=config.is_gelu_approx,
+            attention_norm_type=config.attention_norm_type,
             name="encoder",
         )
 
         if input_shape is not None:
-            self._init(input_shape=input_shape)
+            self._init(input_shape=input_shape, is_robust=config.is_robust)
 
     def build(self, input_shape):
         self.masked_spec_augment = self.add_weight(
@@ -151,17 +162,24 @@ class Wav2Vec2Model(TFKerasModel):
             trainable=True,
         )
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask: Optional[tf.Tensor] = None, training=False):
         """
         Args:
             batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
                 Sound tensor obtained from `Wav2Vec2Processor.__call__`.
+            attention_mask (:obj: `tf.Tensor`, `optional`) of shape (batch_size, seqlen):
+                Don't pass `attention_mask` when working with checkpoints based on `wav2vec2-base`
+                otherwise you should pass this argument.
             training (:obj: `bool`, `optional`):
                 Whether to use model for training.
 
         Returns:
             Logits from the model of shape (batch_size, seqlen, hidden_dim).
         """
+        if self.is_robust and attention_mask is None and batch.shape[0] > 1:
+            logger.warning("You should pass `attention_mask` when working with Wav2Vec2 new checkpoints")
+        elif not self.is_robust and attention_mask is not None:
+            logger.warning("You should not pass `attention_mask` when working with checkpoints based on `wav2vec2-base`")
 
         batch = tf.expand_dims(batch, axis=-1)
         for feature_extractor_layer in self.feature_extractor:
@@ -176,7 +194,14 @@ class Wav2Vec2Model(TFKerasModel):
                 self.mask_time_length,
             )
 
-        batch = self.encoder(batch, training=training)
+        if attention_mask is not None:
+            input_length = tf.reduce_sum(attention_mask, axis=-1)
+            for kernal_size, stride in zip(self.kernal_sizes, self.strides):
+                input_length = 1 + (input_length - kernal_size) // stride
+
+            attention_mask = tf.sequence_mask(input_length, maxlen=batch.shape[1])
+
+        batch = self.encoder(batch, attention_mask=attention_mask, training=training)
         return batch
 
     def freeze_feature_extractor(self):
@@ -201,23 +226,26 @@ class Wav2Vec2ForCTC(TFKerasModel):
         self.dropout = tf.keras.layers.Dropout(config.dropout)
         self.lm_head = tf.keras.layers.Dense(config.vocab_size, name="lm_head")
 
-        self._init(input_shape=input_shape)
+        self._init(input_shape=input_shape, is_robust=config.is_robust)
 
     def freeze_feature_extractor(self):
         """This will freeze the feature extractor layers (Recommended to use for fine-tuning)."""
         self.model.freeze_feature_extractor()
 
-    def call(self, batch: tf.Tensor, training=False):
+    def call(self, batch: tf.Tensor, attention_mask: Optional[tf.Tensor] = None, training=False):
         """
         Args:
             batch (:obj: `tf.Tensor`) of shape (batch_size, seqlen):
                 Sound tensor obtained from `Wav2Vec2Processor.__call__`.
+            attention_mask (:obj: `tf.Tensor`, `optional`) of shape (batch_size, seqlen):
+                Don't pass `attention_mask` when working with checkpoints based on `wav2vec2-base`
+                otherwise you should pass this argument.
             training (:obj: `bool`, `optional`):
                 Whether to use model for training.
         Returns:
             Logits from the model of shape (batch_size, seqlen, vocab_size).
         """
-        batch = self.model(batch, training=training)
+        batch = self.model(batch, attention_mask=attention_mask, training=training)
         batch = self.dropout(batch, training=training)
         batch = self.lm_head(batch)
         return batch

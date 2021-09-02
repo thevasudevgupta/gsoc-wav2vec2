@@ -12,6 +12,7 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
         conv_bias=False,
         is_gelu_approx=False,
         layer_id=0,
+        feature_extractor_norm_type="group",
         name=None,
     ):
         super().__init__(name=name)
@@ -21,6 +22,7 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
         self.conv_bias = conv_bias
         self.is_gelu_approx = is_gelu_approx
         self.layer_id = layer_id
+        self.feature_extractor_norm_type = feature_extractor_norm_type
 
         conv_dim = filter_sizes[layer_id]
         kernal_size = kernal_sizes[layer_id]
@@ -34,15 +36,20 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
             name="conv",
         )
 
-        if layer_id == 0:
-            self.layer_norm = GroupNormalization(
-                conv_dim,
-                axis=-1,
-                name="layer_norm",
-                epsilon=1e-5,
-            )
+        self.layer_norm = None
+        if self.feature_extractor_norm_type == "group":
+            if layer_id == 0:
+                self.layer_norm = GroupNormalization(
+                    conv_dim,
+                    axis=-1,
+                    name="layer_norm",
+                    epsilon=1e-5,
+                )
+        elif self.feature_extractor_norm_type == "layer":
+            # TODO: check value of axis
+            self.layer_norm = tf.keras.layers.LayerNormalization(axis=-1, epsilon=1e-5, name="layer_norm")
         else:
-            self.layer_norm = None
+            raise NotImplementedError
 
     def call(self, batch):
         batch = self.conv_layer(batch)
@@ -61,6 +68,7 @@ class FeatureExtractorLayer(tf.keras.layers.Layer):
                 "conv_bias": self.conv_bias,
                 "is_gelu_approx": self.is_gelu_approx,
                 "layer_id": self.layer_id,
+                "feature_extractor_norm_type": self.feature_extractor_norm_type,
             }
         )
         return config

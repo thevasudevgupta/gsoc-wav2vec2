@@ -19,7 +19,7 @@ class TransformerAttention(tf.keras.layers.Layer):
 
         self.dropout = tf.keras.layers.Dropout(dropout)
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask=None, training=False):
         head_size = batch.shape[2] // self.num_heads
         q_out = self._prepare_either_qkv(self.q(batch), head_size)
         k_out = self._prepare_either_qkv(self.k(batch), head_size)
@@ -27,14 +27,17 @@ class TransformerAttention(tf.keras.layers.Layer):
 
         q_out = q_out * head_size ** (-0.5)
 
-        batch = self.get_context(q_out, k_out, v_out, training=training)
+        batch = self.get_context(q_out, k_out, v_out, attention_mask=attention_mask, training=training)
         batch = self.projection(batch)
         return batch
 
-    def get_context(self, q_out, k_out, v_out, training=False):
+    def get_context(self, q_out, k_out, v_out, attention_mask=None, training=False):
 
         b, h, l, d = q_out.shape
         attn_scores = tf.matmul(q_out, k_out, transpose_b=True)  # "bhqd,bhkd->bhqk"
+
+        if attention_mask is not None:
+            attn_scores = attn_scores + attention_mask
 
         attn_scores = self.dropout(
             tf.nn.softmax(attn_scores, axis=-1), training=training
@@ -72,6 +75,7 @@ class TransformerLayer(tf.keras.layers.Layer):
         layer_norm_eps=1e-5,
         is_gelu_approx=False,
         dropout=0.1,
+        attention_norm_type="postnorm",
         name=None,
     ):
         super().__init__(name=name)
@@ -82,6 +86,7 @@ class TransformerLayer(tf.keras.layers.Layer):
         self.layer_norm_eps = layer_norm_eps
         self.is_gelu_approx = is_gelu_approx
         self.dropout = dropout
+        self.attention_norm_type = attention_norm_type
 
         self.attention = TransformerAttention(
             hidden_size, num_heads, dropout=dropout, name="attention"
@@ -103,21 +108,28 @@ class TransformerLayer(tf.keras.layers.Layer):
         )
         self.stochastic_depth = StochasticDepth(survival_prob)
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask=None, training=False):
 
         # self_attn
         residual = batch
-        batch = self.attention(batch, training=training)
+        if self.attention_norm_type == "prenorm":
+            batch = self.layer_norm(batch)
+        batch = self.attention(batch, attention_mask=attention_mask, training=training)
         batch = self.dropout(batch, training=training)
-        batch = self.layer_norm(batch + residual)
+        batch = batch + residual
+        if self.attention_norm_type == "postnorm":
+            batch = self.layer_norm(batch)
 
         # ffn
         residual = batch
+        if self.attention_norm_type == "prenorm":
+            batch = self.final_layer_norm(batch)
         batch = tf.nn.gelu(self.intermediate(batch), approximate=self.is_gelu_approx)
         batch = self.attn_output(self.dropout(batch, training=training))
         # stochastic depth from `paper <https://arxiv.org/abs/1603.09382> __`
         batch = self.stochastic_depth([residual, batch], training=training)
-        batch = self.final_layer_norm(batch)
+        if self.attention_norm_type == "postnorm":
+            batch = self.final_layer_norm(batch)
 
         return batch
 
@@ -132,6 +144,7 @@ class TransformerLayer(tf.keras.layers.Layer):
                 "layer_norm_eps": self.layer_norm_eps,
                 "is_gelu_approx": self.is_gelu_approx,
                 "dropout": self.dropout,
+                "attention_norm_type": self.attention_norm_type,
             }
         )
         return config
@@ -193,6 +206,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         dropout=0.1,
         layer_norm_eps=1e-5,
         is_gelu_approx=False,
+        attention_norm_type="postnorm",
         name="encoder",
     ):
         super().__init__(name=name)
@@ -206,6 +220,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
         self.dropout = dropout
         self.layer_norm_eps = layer_norm_eps
         self.is_gelu_approx = is_gelu_approx
+        self.attention_norm_type = attention_norm_type
 
         self.pos_conv_embed = PositionalConvEmbedding(
             hidden_size,
@@ -227,16 +242,33 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
                 layer_norm_eps=layer_norm_eps,
                 is_gelu_approx=is_gelu_approx,
                 dropout=dropout,
+                attention_norm_type=attention_norm_type,
                 name=f"layers/{i}",
             )
             for i in range(num_layers)
         ]
 
-    def call(self, batch, training=False):
+    def call(self, batch, attention_mask=None, training=False):
+        if attention_mask is not None:
+            batch = tf.where(attention_mask[:, :, tf.newaxis], batch, 0.0)
+            bsz, seqlen, _ = batch.shape
+
+            attention_mask = tf.cast(attention_mask, dtype=batch.dtype)
+            attention_mask = (1.0 - attention_mask) * tf.constant(-10000.0)
+            attention_mask = attention_mask[:, tf.newaxis, tf.newaxis, :]
+            attention_mask = tf.broadcast_to(attention_mask, (bsz, 1, seqlen, seqlen))
+
         batch = batch + self.pos_conv_embed(batch)
-        batch = self.dropout(self.layer_norm(batch), training=training)
+
+        if self.attention_norm_type == "postnorm":
+            batch = self.layer_norm(batch)
+
+        batch = self.dropout(batch, training=training)
         for layer in self.layers:
-            batch = layer(batch, training=training)
+            batch = layer(batch, attention_mask=attention_mask, training=training)
+
+        if self.attention_norm_type == "prenorm":
+            batch = self.layer_norm(batch)
         return batch
 
     def get_config(self):
@@ -253,6 +285,7 @@ class Wav2Vec2Encoder(tf.keras.layers.Layer):
                 "dropout": self.dropout,
                 "layer_norm_eps": self.layer_norm_eps,
                 "is_gelu_approx": self.is_gelu_approx,
+                "attention_norm_type": self.attention_norm_type,
             }
         )
         return config

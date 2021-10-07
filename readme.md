@@ -2,7 +2,7 @@
 
 This repository presents an implementation of the **Wav2Vec2** model [1] in **TensorFlow 2.0** as a part of [**Google Summer of Code**](https://summerofcode.withgoogle.com/).
 
-For a quick demo, please check out [this](https://hf.co/spaces/vasudevgupta/GOOGLE_SUMMER_OF_CODE). Final report of the project can be found [here](https://vasudevgupta7.github.io/gsoc-wav2vec2/assets/final_report).
+For a quick demo, please check out [this](https://hf.co/spaces/vasudevgupta/GOOGLE_SUMMER_OF_CODE). You can find the final report of the project [here](https://vasudevgupta7.github.io/gsoc-wav2vec2/assets/final_report).
 
 ## Notebooks
 
@@ -28,18 +28,18 @@ Below is a summary of checkpoints obtained during the project:
 | [`gsoc-wav2vec2-robust`](https://hf.co/vasudevgupta/gsoc-wav2vec2-robust) | [`wav2vec2-robust`](https://tfhub.dev/vasudevgupta7/wav2vec2-robust) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2-robust](https://hf.co/facebook/wav2vec2-large-robust) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
 | [`gsoc-wav2vec2-xlsr-53`](https://hf.co/vasudevgupta/gsoc-wav2vec2-xlsr-53) | [`wav2vec2-xlsr-53`](https://tfhub.dev/vasudevgupta7/wav2vec2-xlsr-53) | This checkpoint is TensorFlow's equivalent of [pre-trained Wav2Vec2-xlsr-53](https://hf.co/facebook/wav2vec2-large-xlsr-53) by Facebook. PyTorch weights are converted into TensorFlow using [`convert_torch_to_tf.py`](src/convert_torch_to_tf.py) |
 
-To know more about the process of obtaining the first two checkpoints, please check out [this section](#running-conversion-script) and to know about the process of obtaining the last checkpoint, please check out [this section](#reproducing-this-project).
+To know more about the process of obtaining the first two checkpoints, please check out [this section](#running-conversion-script) and to know about the process of getting the last checkpoint, please check out [this section](#reproducing-this-project).
 
 ## Using this Repository
 
-`Wav2Vec2` model from this repository can be installed using the `pip` command:
+Install `Wav2Vec2` model from this repository using the `pip` command:
 
 ```shell
 # this will install the wav2vec2 package
 pip3 install git+https://github.com/vasudevgupta7/gsoc-wav2vec2@main
 ```
 
-You can use the fine-tuned checkpoints (from 🤗Hub) like this: 
+You can use the fine-tuned checkpoints (from 🤗 Hub) like this: 
 
 ```python
 from wav2vec2 import Wav2Vec2ForCTC, Wav2Vec2Config
@@ -56,7 +56,7 @@ model = Wav2Vec2ForCTC.from_pretrained(model_id)
 Additionally, you can use the `SavedModel` from TFHub like this:
 
 ```python
-import tensorflow_hub as hub
+import tensorflow_hub as Hub
 
 model_url = "https://tfhub.dev/vasudevgupta7/wav2vec2-960h/1"
 model = hub.KerasLayer(model_url)
@@ -64,7 +64,7 @@ model = hub.KerasLayer(model_url)
 # use this `model`, just like any other TF SavedModel
 ```
 
-Please checkout the notebooks referred to in this repository for more information on how to use the `Wav2Vec2` model.
+Please checkout the notebooks referred to in this repository for more information on using the `Wav2Vec2` model.
 
 ## Reproducing this project
 
@@ -82,7 +82,7 @@ sudo apt-get install libsndfile1-dev
 cd src
 ```
 
-For using TPUs, it's important to store model weights and datasets in the GCS bucket so that TPU can access them directly from there. Hence we will create 2 GCS buckets - one for checkpointing and the other for storing LibriSpeech tfrecords.
+For using TPUs, it's essential to store model weights and datasets in the GCS bucket so that TPU can access them directly from there. Hence we will create 2 GCS buckets - one for checkpointing and the other for storing LibriSpeech tfrecords.
 
 ```shell
 # these bucket names will be required to run the training script later
@@ -121,13 +121,13 @@ Now your GCS bucket (`DATA_BUCKET_NAME`) should look like this:
         .
         .
 
-Follow the above steps for all other data splits. You just need to change the `DATA_SPLIT` environment variable.
+Follow the above steps for all other data splits. You need to change the `DATA_SPLIT` environment variable.
 
 ### Model training
 
-Now since everything is installed and GCS buckets are configured, we just need to run one command to initiate training.
+Since you have installed everything and GCS buckets are configured, we need to run one command to initiate training.
 
-Note: Following commands assumes that you have exported `DATA_BUCKET_NAME` & `CKPT_BUCKET_NAME` environment variables already.
+Note: Following commands assume that you already have exported `DATA_BUCKET_NAME` & `CKPT_BUCKET_NAME` environment variables.
 
 The following command will fine-tune the wav2vec2 model on single/multiple GPUs or Colab/Kaggle TPUs:
 
@@ -145,7 +145,7 @@ TPU_NAME=<tpu-name> python3 main.py
 
 ## Running Conversion script
 
-Original PyTorch checkpoints (from Facebook) can be converted using the conversion script available in this repository.
+You can convert original PyTorch checkpoints (from Facebook) using the conversion script available in this repository.
 
 ```shell
 python3 convert_torch_to_tf.py \
@@ -170,8 +170,8 @@ pytest -sv tests
 
 ## References
 
-[1] Baevski, Alexei, et al. “Wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.” ArXiv:2006.11477 [Cs, Eess], Oct. 2020. arXiv.org, http://arxiv.org/abs/2006.11477.
+[1] Baevski, Alexei, et al. "Wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations." ArXiv:2006.11477 [Cs, Eess], Oct. 2020. arXiv.org, http://arxiv.org/abs/2006.11477.
 
 ## End Notes
 
-Please create an issue in case you encountered any issues while using this project. Don't forget to 🌟 this repository if you liked my work.
+Would you please create an issue if you encounter any problems while using this project? Don't forget to 🌟 this repository if you like my work.

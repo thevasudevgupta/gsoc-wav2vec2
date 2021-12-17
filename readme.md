@@ -72,7 +72,8 @@ Please checkout the notebooks referred to in this repository for more informatio
 
 ```shell
 # install & setup TensorFlow first
-pip3 install tensorflow
+pip3 install tensorflow==2.5
+# Only `TF==2.5` is tested for now!
 
 # install other requirements of this project using the following command:
 pip3 install -qr requirements.txt
@@ -174,4 +175,4 @@ pytest -sv tests
 
 ## End Notes
 
-Would you please create an issue if you encounter any problems while using this project? Don't forget to 🌟 this repository if you like my work.
+Please create an issue if you encounter any problems while using this project. Don't forget to 🌟 this repository if you like this work.
